@@ -76,6 +76,13 @@ export const api = {
   deleteConnection: (id) => request(`/api/connections/${id}`, { method: 'DELETE' }),
   testConnection: (id) => request(`/api/connections/${id}/test`, { method: 'POST' }),
 
+  // MCP tool connections (git / Jira / Slack / filesystem / ...).
+  listMcp: () => request('/api/mcp'),
+  addMcp: (body) => request('/api/mcp', { method: 'POST', body }),
+  updateMcp: (id, body) => request(`/api/mcp/${id}`, { method: 'PATCH', body }),
+  deleteMcp: (id) => request(`/api/mcp/${id}`, { method: 'DELETE' }),
+  testMcp: (id) => request(`/api/mcp/${id}/test`, { method: 'POST' }),
+
   // Pipeline step prompt versioning.
   promptVersions: (pid, sid) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`),
   savePromptVersion: (pid, sid, body) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`, { method: 'POST', body }),

@@ -446,6 +446,7 @@ textarea.input.mono { font-family: var(--mono); font-size: 13px; line-height: 1.
 .conn-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; min-width: 200px; }
 .conn-url { word-break: break-all; }
 .conn-actions { display: flex; gap: 8px; }
+.conn-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
 
 /* ---------- Prompt editor (mobile-friendly: preview by default, edit on tap) ---------- */
 .field-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }

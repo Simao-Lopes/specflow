@@ -13,6 +13,7 @@ import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
 import { resolveMethod, materializePrompts, resolvedStepPrompt, resolvedMethodPrompt, METHODS } from '../methods/catalog.js';
 import { PIPELINE_PRESETS } from './presets.js';
 import { jobDefaults, autoVersionPipeline } from './settings.js';
+import { mcpToolsContext } from './mcp.js';
 import { writePipelineToDisk, deletePipelineFromDisk, pipelinesFromDisk } from './pipelinestore.js';
 
 let runner;
@@ -501,6 +502,13 @@ async function executeStep(job, spec, step, { checkout }) {
   const runStep = method
   ? { ...step, ...pick(method, ['harness', 'command', 'provider', 'model']), prompt: step.prompt || method.prompt || '' }
   : step;
+
+  // Append configured MCP tools (all nodes can use all MCPs) to the prompt so
+  // any harness can call them.
+  try {
+    const mcpCtx = await mcpToolsContext();
+    if (mcpCtx) runStep.prompt = [runStep.prompt || '', mcpCtx].filter(Boolean).join('\n\n');
+  } catch {}
 
   addLog(jobIdT(job), `— Step: ${step.name}${method ? ` [method: ${method.name}]` : (step.harness ? ` (harness ${step.harness})` : '')}`);
   setStep(jobIdT(job), step, { status: 'running', attempt: 1 });

@@ -25,6 +25,10 @@ import {
   listConnections, addConnection, updateConnection, deleteConnection, testConnection,
   savePromptVersion, promptVersions, restorePromptVersion,
 } from '../core/settings.js';
+import {
+  listMcpConnections, getMcpConnection, addMcpConnection, updateMcpConnection, deleteMcpConnection,
+  testMcpConnection,
+} from '../core/mcp.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -158,6 +162,14 @@ export function buildServer({ dbPath, port }) {
   app.patch('/api/connections/:id', async (req, rep) => updateConnection(req.params.id, req.body) ?? rep.code(404).send({ error: 'not found' }));
   app.delete('/api/connections/:id', async (req) => { deleteConnection(req.params.id); return { ok: true }; });
   app.post('/api/connections/:id/test', async (req) => testConnection(req.params.id));
+
+  // MCP tool connections.
+  app.get('/api/mcp', async () => listMcpConnections());
+  app.get('/api/mcp/:id', async (req, rep) => getMcpConnection(req.params.id) ?? rep.code(404).send({ error: 'not found' }));
+  app.post('/api/mcp', async (req) => addMcpConnection(req.body));
+  app.patch('/api/mcp/:id', async (req) => updateMcpConnection(req.params.id, req.body));
+  app.delete('/api/mcp/:id', async (req) => { deleteMcpConnection(req.params.id); return { ok: true }; });
+  app.post('/api/mcp/:id/test', async (req) => testMcpConnection(req.params.id));
 
   // Prompt versioning.
   app.get('/api/pipelines/:pid/steps/:sid/prompt-versions', async (req) => promptVersions(req.params.pid, req.params.sid));

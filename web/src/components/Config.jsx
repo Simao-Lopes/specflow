@@ -190,6 +190,79 @@ export default function Config({ config, onNotify, onChanged }) {
     }
   };
 
+  // MCP tool connections.
+  const [mcps, setMcps] = useState([]);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [mcpFormOpen, setMcpFormOpen] = useState(false);
+  const [newMcp, setNewMcp] = useState({ name: '', transport: 'stdio', command: '', url: '', args: '' });
+  const [addingMcp, setAddingMcp] = useState(false);
+  const [testingMcp, setTestingMcp] = useState({}); // id -> 'busy'|'ok'|'error'
+  const [mcpTestResult, setMcpTestResult] = useState({}); // id -> {tools}|{error}
+
+  const refreshMcps = useCallback(async () => {
+    setMcpLoading(true);
+    try {
+      const list = await api.listMcp();
+      setMcps(Array.isArray(list) ? list : []);
+    } catch (e) { onNotify(e.message, 'error'); }
+    finally { setMcpLoading(false); }
+  }, [onNotify]);
+
+  useEffect(() => { refreshMcps(); }, [refreshMcps]);
+
+  const addMcp = async (e) => {
+    e.preventDefault();
+    if (!newMcp.name.trim()) { onNotify('MCP name is required', 'error'); return; }
+    if (newMcp.transport !== 'stdio' && !newMcp.url.trim()) { onNotify('MCP URL is required', 'error'); return; }
+    if (newMcp.transport === 'stdio' && !newMcp.command.trim()) { onNotify('MCP command is required', 'error'); return; }
+    setAddingMcp(true);
+    try {
+      const args = newMcp.args.split(/[\s,]+/).filter(Boolean);
+      await api.addMcp({
+        name: newMcp.name.trim(),
+        transport: newMcp.transport,
+        command: newMcp.transport === 'stdio' ? newMcp.command.trim() : '',
+        url: newMcp.transport !== 'stdio' ? newMcp.url.trim() : '',
+        args,
+      });
+      onNotify('MCP connection added', 'success');
+      setNewMcp({ name: '', transport: 'stdio', command: '', url: '', args: '' });
+      setMcpFormOpen(false);
+      await refreshMcps();
+    } catch (err) { onNotify(err.message, 'error'); }
+    finally { setAddingMcp(false); }
+  };
+
+  const deleteMcp = async (c) => {
+    if (!window.confirm(`Delete MCP connection "${c.name}"?`)) return;
+    try {
+      await api.deleteMcp(c.id);
+      onNotify('MCP connection deleted', 'info');
+      await refreshMcps();
+    } catch (err) { onNotify(err.message, 'error'); }
+  };
+
+  const testMcp = async (c) => {
+    setTestingMcp((t) => ({ ...t, [c.id]: 'busy' }));
+    setMcpTestResult((t) => ({ ...t, [c.id]: undefined }));
+    try {
+      const res = await api.testMcp(c.id);
+      if (res && res.ok) {
+        setTestingMcp((t) => ({ ...t, [c.id]: 'ok' }));
+        setMcpTestResult((t) => ({ ...t, [c.id]: { tools: res.tools || [] } }));
+        onNotify(`MCP "${c.name}" OK (${(res.tools || []).length} tools)`, 'success');
+      } else {
+        setTestingMcp((t) => ({ ...t, [c.id]: 'error' }));
+        setMcpTestResult((t) => ({ ...t, [c.id]: { error: (res && res.error) || 'test failed' } }));
+        onNotify((res && res.error) || `MCP "${c.name}" failed`, 'error');
+      }
+    } catch (err) {
+      setTestingMcp((t) => ({ ...t, [c.id]: 'error' }));
+      setMcpTestResult((t) => ({ ...t, [c.id]: { error: err.message } }));
+      onNotify(err.message, 'error');
+    }
+  };
+
   const models = useMemo(() => config?.models || {}, [config]);
   const connOptions = useMemo(() => connections.map((c) => ({ id: c.id, name: c.name, url: displayUrl(c) })), [connections]);
 
@@ -323,6 +396,89 @@ export default function Config({ config, onNotify, onChanged }) {
                       {st === 'busy' ? '…' : 'Test'}
                     </button>
                     <button className="btn small danger" onClick={() => deleteConn(c)}>Delete</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ---------- MCP tool connections ---------- */}
+      <div className="view-head section-head-inline">
+        <h3 className="section-title-standalone">MCP Connections <span className="muted small">(tools available to all pipeline nodes)</span></h3>
+        <button className="btn small ghost" onClick={() => setMcpFormOpen((o) => !o)}>
+          {mcpFormOpen ? 'Cancel' : '+ Add MCP'}
+        </button>
+      </div>
+
+      {mcpFormOpen && (
+        <form className="card form conn-form" onSubmit={addMcp}>
+          <div className="row">
+            <Field label="Name *">
+              <input className="input" value={newMcp.name} onChange={(e) => setNewMcp((n) => ({ ...n, name: e.target.value }))} placeholder="e.g. jira / slack / git" />
+            </Field>
+            <Field label="Transport">
+              <select className="input" value={newMcp.transport} onChange={(e) => setNewMcp((n) => ({ ...n, transport: e.target.value }))}>
+                <option value="stdio">stdio (local command)</option>
+                <option value="sse">remote (SSE / HTTP)</option>
+              </select>
+            </Field>
+          </div>
+          {newMcp.transport === 'stdio' ? (
+            <div className="row">
+              <Field label="Command *" hint="e.g. npx -y @modelcontextprotocol/server-filesystem /path">
+                <input className="input mono" value={newMcp.command} onChange={(e) => setNewMcp((n) => ({ ...n, command: e.target.value }))} placeholder="npx -y mcp-server …" />
+              </Field>
+              <Field label="Args (space/comma separated)">
+                <input className="input mono" value={newMcp.args} onChange={(e) => setNewMcp((n) => ({ ...n, args: e.target.value }))} placeholder="/path /another" />
+              </Field>
+            </div>
+          ) : (
+            <Field label="URL *" hint="streamable HTTP / SSE endpoint">
+              <input className="input mono" value={newMcp.url} onChange={(e) => setNewMcp((n) => ({ ...n, url: e.target.value }))} placeholder="https://mcp.example.com/sse" />
+            </Field>
+          )}
+          <div className="form-actions">
+            <button type="button" className="btn ghost" onClick={() => setMcpFormOpen(false)}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={addingMcp}>{addingMcp ? 'Adding…' : 'Add MCP'}</button>
+          </div>
+        </form>
+      )}
+
+      <div className="card config-card conns-card">
+        {mcpLoading && !mcps.length ? (
+          <p className="muted">Loading MCP connections…</p>
+        ) : mcps.length === 0 ? (
+          <p className="muted">No MCP connections yet. Add a server (git, Jira, Slack, filesystem…) to expose its tools to every pipeline node.</p>
+        ) : (
+          <div className="conns-list">
+            {mcps.map((c) => {
+              const st = testingMcp[c.id];
+              const tr = mcpTestResult[c.id];
+              return (
+                <div key={c.id} className="conn-row">
+                  <div className="conn-main">
+                    <span className="config-name">{c.name}</span>
+                    <span className="mono small muted conn-url">
+                      {c.transport === 'stdio' ? c.command : c.url}
+                    </span>
+                    <span className="chip small">{c.transport}</span>
+                    {c.enabled === 0 && <span className="badge">disabled</span>}
+                    {st === 'ok' && <span className="badge status-success">✓ {tr?.tools?.length ?? 0} tools</span>}
+                    {st === 'error' && <span className="badge status-failed">✕ {tr?.error || 'failed'}</span>}
+                    {st === 'ok' && tr?.tools?.length > 0 && (
+                      <div className="conn-tools">
+                        {tr.tools.slice(0, 8).map((t) => <span key={t.name} className="chip small mono">{t.name}</span>)}
+                        {tr.tools.length > 8 && <span className="muted small">+{tr.tools.length - 8} more</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="conn-actions">
+                    <button className="btn small ghost" disabled={st === 'busy'} onClick={() => testMcp(c)}>
+                      {st === 'busy' ? '…' : 'Test'}
+                    </button>
+                    <button className="btn small danger" onClick={() => deleteMcp(c)}>Delete</button>
                   </div>
                 </div>
               );

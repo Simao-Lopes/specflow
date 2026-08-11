@@ -125,6 +125,17 @@ function migrate() {
       author TEXT DEFAULT 'human',
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS mcp_connections (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      transport TEXT NOT NULL DEFAULT 'stdio',
+      command TEXT,
+      url TEXT,
+      args TEXT DEFAULT '[]',
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Migrate existing DBs that predate the steps column / gate columns
