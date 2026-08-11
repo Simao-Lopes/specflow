@@ -22,17 +22,43 @@ export default function SpecDetail({
   const logRef = useRef(null);
   const seenLogIds = useRef(new Set());
   const seenMsgIds = useRef(new Set());
+  const selectedJobRef = useRef(null);
 
   // Load everything from the backend. Used on mount and re-run on socket events.
   const loadAll = useCallback(() => {
     api.getSpec(specId).then(setSpec).catch((e) => onNotify(e.message, 'error'));
-    api.listJobs(specId).then((list) => setJobs(list || [])).catch((e) => onNotify(e.message, 'error'));
+    api.listJobs(specId).then((list) => {
+      list = list || [];
+      setJobs(list);
+      // PERSISTENT LIVE LOG: always ensure we have a valid selected run so the
+      // console shows logs. Prefer the saved one if it still exists, else the latest.
+      const saved = sessionStorage.getItem(`specflow_seljob_${specId}`);
+      const stillExists = list.some((j) => String(j.id) === String(saved));
+      if (saved && stillExists) {
+        selectedJobRef.current = saved;
+        setSelectedJob(saved);
+      } else if (list.length) {
+        const latest = list[0].id;
+        selectedJobRef.current = latest;
+        setSelectedJob(latest);
+        sessionStorage.setItem(`specflow_seljob_${specId}`, latest);
+      }
+    }).catch((e) => onNotify(e.message, 'error'));
     api.getSpecSteps(specId)
       .then((s) => setSteps(Array.isArray(s) ? s : []))
       .catch(() => setSteps([]));
     api.listMessages(specId)
       .then((m) => { (m || []).forEach((x) => seenMsgIds.current.add(String(x.id))); setMessages(m || []); })
       .catch((e) => onNotify(e.message, 'error'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specId]);
+
+  // Restore the previously selected run (and its cached logs) across navigations / reloads.
+  useEffect(() => {
+    const saved = sessionStorage.getItem(`specflow_seljob_${specId}`);
+    if (saved) { selectedJobRef.current = saved; setSelectedJob(saved); }
+    const cachedLogs = sessionStorage.getItem(`specflow_logs_${specId}`);
+    if (cachedLogs) { try { const arr = JSON.parse(cachedLogs); if (Array.isArray(arr)) { arr.forEach((e) => seenLogIds.current.add(e.ts + ':' + e.message)); setLogs(arr); } } catch {} }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specId]);
 
@@ -84,18 +110,25 @@ export default function SpecDetail({
 
   // Fetch initial logs when a job is selected.
   useEffect(() => {
-    if (!selectedJob) { setLogs([]); return; }
+    if (!selectedJob) { return; }
     let alive = true;
     setLoadingLogs(true);
-    seenLogIds.current = new Set();
     api.jobLogs(selectedJob, 500).then((entries) => {
       if (!alive) return;
+      seenLogIds.current = new Set();
       entries.forEach((e) => seenLogIds.current.add(e.ts + ':' + e.message));
       setLogs(entries || []);
     }).catch((e) => onNotify(e.message, 'error')).finally(() => alive && setLoadingLogs(false));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJob]);
+
+  // PERSIST live log: cache logs in sessionStorage so they survive navigation/reload.
+  useEffect(() => {
+    if (!selectedJob) return;
+    try { sessionStorage.setItem(`specflow_logs_${specId}`, JSON.stringify(logs.slice(-400))); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs, selectedJob, specId]);
 
   // Auto-scroll log console to bottom.
   useEffect(() => {
@@ -256,7 +289,7 @@ export default function SpecDetail({
             </thead>
             <tbody>
               {jobs.map((j) => (
-                <tr key={j.id} className={String(j.id) === String(selectedJob) ? 'selected' : ''} onClick={() => setSelectedJob(j.id)}>
+                <tr key={j.id} className={String(j.id) === String(selectedJob) ? 'selected' : ''} onClick={() => { selectedJobRef.current = j.id; setSelectedJob(j.id); sessionStorage.setItem(`specflow_seljob_${specId}`, j.id); }}>
                   <td className="mono">{String(j.id).slice(0, 8)}</td>
                   <td>
                     <span className={`badge ${statusClass(j.status)}`}>{j.status}</span>

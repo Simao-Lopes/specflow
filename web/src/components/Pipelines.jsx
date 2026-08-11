@@ -11,6 +11,7 @@ export default function Pipelines({
   onCancelNew,
   onChanged,
   pipelineEvent,
+  models,
 }) {
   // Editor state, synced from App-driven `editor` (mode: 'new' | 'edit').
   const [steps, setSteps] = useState(() => defaultSteps());
@@ -93,7 +94,7 @@ export default function Pipelines({
             <textarea className="input" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What does this pipeline do?" />
           </label>
 
-          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} />
+          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} />
 
           <div className="form-actions">
             <button type="button" className="btn ghost" onClick={cancel}>Cancel</button>

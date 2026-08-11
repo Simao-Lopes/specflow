@@ -86,8 +86,46 @@ function Field({ label, children }) {
   );
 }
 
+// Model picker: a dropdown of the provider's known models, plus a free-text
+// "custom" option for anything not in the catalog. Falls back to a plain text
+// input when the provider has no catalog or isn't an LLM provider.
+function ModelSelect({ provider, model, onChange, models }) {
+  const catalog = (models && provider && models[provider]) || [];
+  const inCatalog = catalog.some((m) => m === model);
+  const [customMode, setCustomMode] = useState(() => catalog.length > 0 && !!model && !inCatalog);
+
+  // No catalog for this provider (e.g. custom harness) → plain text input.
+  if (catalog.length === 0) {
+    return (
+      <input className="input mono" value={model || ''} onChange={(e) => onChange(e.target.value || null)} placeholder="model" />
+    );
+  }
+
+  return (
+    <>
+      <select
+        className="input mono"
+        value={customMode ? '__custom__' : (inCatalog ? model : '')}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === '__custom__') { setCustomMode(true); return; } // keep model text, reveal input
+          setCustomMode(false);
+          onChange(v || null);
+        }}
+      >
+        <option value="">(auto)</option>
+        {catalog.map((m) => <option key={m} value={m}>{m}</option>)}
+        <option value="__custom__">custom…</option>
+      </select>
+      {customMode && (
+        <input className="input mono model-custom" value={model || ''} onChange={(e) => onChange(e.target.value || null)} placeholder="custom model id" />
+      )}
+    </>
+  );
+}
+
 // Editable sub-agents (the verify flow) for a single step.
-function VerifierList({ verifiers, onChange }) {
+function VerifierList({ verifiers, onChange, models }) {
   const [open, setOpen] = useState(true);
 
   const setVerifier = (i, patch) => {
@@ -159,7 +197,7 @@ function VerifierList({ verifiers, onChange }) {
                   </select>
                 </Field>
                 <Field label="Model">
-                  <input className="input mono" value={v.model || ''} onChange={(e) => setVerifier(i, { model: e.target.value || null })} placeholder="model" />
+                  <ModelSelect provider={v.provider} model={v.model || null} models={models} onChange={(m) => setVerifier(i, { model: m })} />
                 </Field>
               </div>
             )}
@@ -176,7 +214,7 @@ function VerifierList({ verifiers, onChange }) {
 }
 
 // One editable step card.
-function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete }) {
+function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models }) {
   const set = (patch) => onPatch(index, patch);
 
   return (
@@ -226,7 +264,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete 
             </select>
           </Field>
           <Field label="Model">
-            <input className="input mono" value={step.model || ''} onChange={(e) => set({ model: e.target.value || null })} placeholder="model" />
+            <ModelSelect provider={step.provider} model={step.model || null} models={models} onChange={(m) => set({ model: m })} />
           </Field>
         </div>
       )}
@@ -238,12 +276,13 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete 
       <VerifierList
         verifiers={step.verify || []}
         onChange={(verify) => set({ verify })}
+        models={models}
       />
     </div>
   );
 }
 
-export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps' }) {
+export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models }) {
   const list = Array.isArray(steps) ? steps : defaultSteps();
 
   const patch = (i, patchObj) => {
@@ -277,6 +316,7 @@ export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabe
             onMoveUp={(idx) => move(idx, -1)}
             onMoveDown={(idx) => move(idx, 1)}
             onDelete={remove}
+            models={models}
           />
         ))}
       </div>

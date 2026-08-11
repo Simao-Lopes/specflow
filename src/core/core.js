@@ -434,11 +434,21 @@ async function executeStep(job, spec, step, { checkout }) {
     if (step.verify?.length) {
       addLog(jobIdT(job), `  Running ${step.verify.length} verify sub-agent(s): ${step.verify.map(v => v.name).join(', ')}`);
       for (const v of step.verify) {
+        // Gracefully skip verifiers that were added but not yet configured
+        // (e.g. a custom verifier with an empty command). Don't hard-fail.
+        const vh = v.harness || step.harness;
+        const unconfigured = (vh === 'custom' && !(v.command || '').trim());
+        if (unconfigured) {
+          addLog(jobIdT(job), `  [${v.name}] not configured (no command) — skipping`);
+          setStep(jobIdT(job), v, { status: 'skipped', detail: 'no command' });
+          verifyMsgs.push(`[${v.name}] skipped (not configured)`);
+          continue;
+        }
         setStep(jobIdT(job), v, { status: 'running', attempt: 1 });
         try {
           const vres = await runHarness({
             id: jobIdT(job),
-            harness: v.harness || step.harness, model: v.model || job.model, provider: v.provider || job.provider,
+            harness: vh, model: v.model || job.model, provider: v.provider || job.provider,
             repo: job.repo, branch: job.branch,
             step: v, feedback, lifecycle: 'verify',
           }, { checkout, repo: job.repo, spec });

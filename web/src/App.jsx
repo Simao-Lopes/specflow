@@ -252,6 +252,7 @@ export default function App() {
             onCreated={handlePipelineCreated}
             onCancelNew={cancelNewPipeline}
             onChanged={refreshPipelines}
+            models={config?.models || {}}
           />
         )}
         {view === 'agents' && <Agents agents={agents} config={config} onNotify={notify} onChanged={() => { refreshAgents(); }} />}
