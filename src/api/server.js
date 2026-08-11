@@ -9,7 +9,8 @@ import { dirname, join } from 'node:path';
 import {
   listSpecs, getSpec, createSpec, updateSpec, deleteSpec,
   listAgents, upsertAgent, deleteAgent,
-  listJobs, getJob, jobLogs, runJob,
+  listJobs, getJob, jobLogs, jobSteps, runJob,
+  listMessages, addMessage, stepsOf,
 } from '../core/core.js';
 import { on, EVT } from '../core/events.js';
 import { initStore } from '../core/store.js';
@@ -44,9 +45,31 @@ export function buildServer({ dbPath, port }) {
   app.put('/api/agents', async (req) => upsertAgent(req.body));
   app.delete('/api/agents/:id', async (req) => { deleteAgent(req.params.id); return { ok: true }; });
 
+  // Steps for a spec
+  app.get('/api/specs/:id/steps', async (req) => {
+    const s = getSpec(req.params.id);
+    if (!s) return { error: 'not found' };
+    return stepsOf(s);
+  });
+  // Save full steps pipeline (validated client-side) — accepts array or {steps:[...]}
+  app.put('/api/specs/:id/steps', async (req) => {
+    const pipe = Array.isArray(req.body) ? req.body : req.body?.steps;
+    if (!Array.isArray(pipe)) return { error: 'steps must be an array' };
+    const saved = updateSpec(req.params.id, { steps: pipe });
+    return stepsOf(saved);
+  });
+
+  // Per-spec agent-session messages (interact with the agent)
+  app.get('/api/specs/:id/messages', async (req) => listMessages(req.params.id));
+  app.post('/api/specs/:id/messages', async (req) => addMessage({
+    specId: req.params.id, role: req.body?.role || 'user', author: 'human',
+    content: req.body?.content, inReplyJob: req.body?.inReplyJob || null,
+  }));
+
   app.get('/api/jobs', async (req) => listJobs({ specId: req.query.specId }));
   app.get('/api/jobs/:id', async (req) => getJob(req.params.id));
   app.get('/api/jobs/:id/logs', async (req) => jobLogs(req.params.id, { limit: req.query.limit }));
+  app.get('/api/jobs/:id/steps', async (req) => jobSteps(req.params.id));
   app.post('/api/specs/:id/run', async (req) => {
     const jobId = await runJob({ specId: req.params.id, ...(req.body || {}) });
     return { jobId };
@@ -80,6 +103,8 @@ export function buildServer({ dbPath, port }) {
     mk(EVT.SPEC_UPDATED, p => socket.emit('spec', p));
     mk(EVT.JOB_UPDATED, p => socket.emit('job', p));
     mk(EVT.JOB_LOG, p => { if (socket.jobFilters?.includes(p.jobId) || !socket.jobFilters?.length) socket.emit('log', p); });
+    mk(EVT.JOB_STEP, p => { if (socket.jobFilters?.includes(p.job_id) || !socket.jobFilters?.length) socket.emit('step', p); });
+    mk(EVT.MESSAGE, p => socket.emit('message', p));
     mk(EVT.NOTIFY, p => socket.emit('notify', p));
 
     socket.on('watch-job', (jobId) => { socket.jobFilters = [jobId]; });

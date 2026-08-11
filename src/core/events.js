@@ -8,7 +8,9 @@ export const EVT = {
   SPEC_UPDATED   : 'spec:updated',
   JOB_UPDATED    : 'job:updated',
   JOB_LOG        : 'job:log',
+  JOB_STEP       : 'job:step',
   AGENT_UPDATED  : 'agent:updated',
+  MESSAGE        : 'message:new',
   NOTIFY         : 'notify',
 } ;
 
