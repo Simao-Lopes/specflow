@@ -245,7 +245,7 @@ async function executeJob(jobId) {
   if (!job) return;
   const repoRoot = resolve(getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value || './work');
   const spec = getSpec(job.spec_id);
-  const steps = parseSteps(spec);
+  const steps = stepsOf(spec);
   const idx = job.step_index || 0;   // index of the step to run now
   if (idx >= steps.length) { finishJob(job, spec); return; }
 
@@ -253,9 +253,6 @@ async function executeJob(jobId) {
     mark(jobId, 'running');
 
     // One-time checkout setup only on the first (re)entry of a fresh run.
-    const checkout = job.repo
-      ? join(repoRoot, parseRepoSlug(job.repo), ...[]) // placeholder
-      : null;
     let workdir;
     if (job.repo) {
       workdir = checkout(repoRoot, job.repo);
@@ -356,7 +353,6 @@ function checkout(repoRoot, repoUrl) {
   if (!m) return join(repoRoot, '_repos', Buffer.from(repoUrl).toString('hex').slice(0, 16));
   return join(repoRoot, m[1], m[2]);
 }
-function parseRepoSlug(repoUrl) { return checkout('', repoUrl); }
 
 // Human gate decision (approve / reject / retry).
 export async function gateJob(jobId, action, note = '') {

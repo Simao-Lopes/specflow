@@ -1,61 +1,64 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api.js';
 import { TYPES, statusClass, fmtTs } from './SpecBoard.jsx';
-import StepsBuilder, { defaultSteps } from './StepsBuilder.jsx';
+import { flowHint } from './StepsBuilder.jsx';
 import AgentChat from './AgentChat.jsx';
 
-const HARNESSES = ['custom', 'hermes', 'claude', 'llm', 'plain'];
-const PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
-
-export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent, onRefreshJob, stepEvent, messageEvent }) {
+export default function SpecDetail({
+  specId, onNotify, onBack,
+  jobEvent, onRefreshJob, stepEvent, messageEvent, specEvent,
+  pipelines, onOpenPipelinesForNew,
+}) {
   const [spec, setSpec] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(null);
-  const [runMenuOpen, setRunMenuOpen] = useState(false);
-  const [runForm, setRunForm] = useState({ harness: 'hermes', model: '', provider: 'openrouter' });
-  const [running, setRunning] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
-  const [logs, setLogs] = useState([]); // {id} entries for selectedJob
+  const [logs, setLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
-  const [steps, setSteps] = useState(null);
-  const [savingSteps, setSavingSteps] = useState(false);
+  const [steps, setSteps] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [gateNotes, setGateNotes] = useState({});
+  const [syncTick, setSyncTick] = useState(0);
   const logRef = useRef(null);
   const seenLogIds = useRef(new Set());
   const seenMsgIds = useRef(new Set());
 
-  // Load spec detail.
-  useEffect(() => {
-    let alive = true;
-    api.getSpec(specId).then((s) => { if (alive) { setSpec(s); setForm(s); } })
-      .catch((e) => onNotify(e.message, 'error'));
-    api.listJobs(specId).then((list) => { if (alive) setJobs(list); })
-      .catch((e) => onNotify(e.message, 'error'));
-    // Lazy-load steps pipeline (default when none exist) and agent-session messages.
-    api.getSteps(specId)
-      .then((s) => { if (alive) setSteps(Array.isArray(s) && s.length ? s : defaultSteps()); })
-      .catch(() => { if (alive) setSteps(defaultSteps()); });
+  // Load everything from the backend. Used on mount and re-run on socket events.
+  const loadAll = useCallback(() => {
+    api.getSpec(specId).then(setSpec).catch((e) => onNotify(e.message, 'error'));
+    api.listJobs(specId).then((list) => setJobs(list || [])).catch((e) => onNotify(e.message, 'error'));
+    api.getSpecSteps(specId)
+      .then((s) => setSteps(Array.isArray(s) ? s : []))
+      .catch(() => setSteps([]));
     api.listMessages(specId)
-      .then((m) => {
-        if (!alive) return;
-        (m || []).forEach((x) => seenMsgIds.current.add(String(x.id)));
-        setMessages(m || []);
-      })
+      .then((m) => { (m || []).forEach((x) => seenMsgIds.current.add(String(x.id))); setMessages(m || []); })
       .catch((e) => onNotify(e.message, 'error'));
-    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specId]);
+
+  // Initial load on mount / spec change.
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // FULL SYNC: refetch spec + jobs + pipeline steps + messages whenever any
+  // relevant socket event stream changes. This guarantees the Runs list,
+  // pipeline display and chat always reflect backend state (fixes the
+  // "running spec but zero runs shown" bug).
+  useEffect(() => {
+    setSyncTick((t) => t + 1);
+  }, [jobEvent, stepEvent, messageEvent, specEvent]);
+
+  useEffect(() => {
+    if (syncTick > 0) loadAll();
+  }, [syncTick, loadAll]);
 
   // Append live agent-session messages pushed over the socket (filtered to this spec).
   useEffect(() => {
     if (!Array.isArray(messageEvent)) return;
-    const mine = messageEvent.filter((m) => m && String(m.spec_id) === String(specId));
+    const mine = messageEvent.filter((m) => m && m.id !== undefined && String(m.spec_id) === String(specId));
     if (!mine.length) return;
     setMessages((prev) => {
       const next = [...prev];
       mine.forEach((m) => {
-        if (!m || m.id === undefined) return;
         if (seenMsgIds.current.has(String(m.id))) return;
         seenMsgIds.current.add(String(m.id));
         if (!next.some((x) => String(x.id) === String(m.id))) next.push(m);
@@ -63,23 +66,6 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
       return next;
     });
   }, [messageEvent, specId]);
-
-  // Sync with prop job events (arrive via socket through App).
-  useEffect(() => {
-    if (!Array.isArray(jobEvent)) return;
-    setJobs((prev) => {
-      let next = prev;
-      jobEvent.forEach((j) => {
-        if (!j?.id) return;
-        const i = next.findIndex((x) => String(x.id) === String(j.id));
-        if (i === -1) next = [j, ...next];
-        else { const c = [...next]; c[i] = { ...j }; next = c; }
-      });
-      const merged = [];
-      jobEvent.forEach((j) => { const m = merged.find((x) => String(x.id) === String(j.id)); if (m) Object.assign(m, j); else merged.push({ ...j }); });
-      return merged.filter((j) => j.spec_id === undefined || String(j.spec_id) === String(specId));
-    });
-  }, [jobEvent, specId]);
 
   // Pick up live logs (received in App via watch-all socket) for the selected job.
   useEffect(() => {
@@ -116,31 +102,39 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs, selectedJob]);
 
-  const saveEdit = async (e) => {
-    e.preventDefault();
-    try {
-      const updated = await api.updateSpec(specId, form);
-      setSpec(updated);
-      setForm(updated);
-      setEditing(false);
-      onNotify('Spec updated', 'success');
-    } catch (err) { onNotify(err.message, 'error'); }
-  };
-
-  const pickRun = (provider) => {
-    const models = config?.models?.[provider] || [];
-    setRunForm((f) => ({ ...f, provider, model: f.model || (models[0] || '') }));
-  };
-
   const startRun = async () => {
-    if (!spec) return;
-    setRunMenuOpen(false);
+    if (!spec || running) return;
     setRunning(true);
     try {
-      await api.runSpec(specId, runForm);
-      onNotify(`Run queued (${runForm.provider}/${runForm.model || runForm.harness})`, 'success');
+      await api.runSpec(specId, {});
+      onNotify('Run queued', 'success');
     } catch (err) { onNotify(err.message, 'error'); }
-    finally { setRunning(false); }
+    finally { setRunning(false); loadAll(); }
+  };
+
+  const gateAction = async (job, action) => {
+    const note = (gateNotes[job.id] || '').trim();
+    try {
+      await api.gateJob(job.id, action, note);
+      onNotify(
+        action === 'approve' ? 'Approved — continuing the pipeline…'
+          : action === 'reject' ? 'Step rejected'
+          : 'Retrying current step…',
+        'success'
+      );
+      setGateNotes((g) => ({ ...g, [job.id]: '' }));
+      loadAll();
+    } catch (err) { onNotify(err.message, 'error'); }
+  };
+
+  const changePipeline = async (val) => {
+    if (val === '__new__') { onOpenPipelinesForNew(); return; }
+    if (!spec || val === spec.pipeline_id) return;
+    try {
+      await api.updateSpec(specId, { pipeline_id: val });
+      onNotify('Pipeline updated', 'success');
+      loadAll();
+    } catch (err) { onNotify(err.message, 'error'); }
   };
 
   const doDelete = async () => {
@@ -152,19 +146,6 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
     } catch (err) { onNotify(err.message, 'error'); }
   };
 
-  const setRunFormWrap = (k) => (e) => setRunForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const saveSteps = async () => {
-    if (!spec) return;
-    setSavingSteps(true);
-    try {
-      const saved = await api.saveSteps(specId, steps);
-      setSteps(Array.isArray(saved) && saved.length ? saved : steps);
-      onNotify('Steps saved', 'success');
-    } catch (err) { onNotify(err.message, 'error'); }
-    finally { setSavingSteps(false); }
-  };
-
   const sendMessage = async (content) => {
     const saved = await api.sendMessage(specId, content);
     if (saved && saved.id) {
@@ -174,23 +155,17 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
     return saved;
   };
 
-  // Live pipeline status from socket 'step' events, limited to jobs belonging to this spec.
-  const liveStepEvents = Array.isArray(stepEvent)
-    ? stepEvent.filter((s) => {
-        if (!s) return false;
-        return jobs.some((j) => String(j.id) === String(s.job_id));
-      })
-    : [];
-  // Latest event per configured step id, preserving pipeline order.
-  const liveByStep = {};
-  liveStepEvents.forEach((s) => {
-    if (s && s.step_id && !liveByStep[s.step_id]) liveByStep[s.step_id] = s;
-  });
-
   if (!spec) return <section className="view"><div className="empty"><p>Loading spec…</p></div></section>;
 
-  const modelsForProvider = (p) => (config?.models && config.models[p]) || [];
-  const specJobs = jobs;
+  const gatedJobs = jobs.filter((j) => j.status === 'gated' && j.gate_state === 'waiting');
+  const pipelineName = spec.pipeline_id
+    ? (pipelines || []).find((p) => String(p.id) === String(spec.pipeline_id))?.name
+    : null;
+
+  // Live pipeline status from socket 'step' events, limited to jobs belonging to this spec.
+  const liveStepEvents = Array.isArray(stepEvent)
+    ? stepEvent.filter((s) => s && jobs.some((j) => String(j.id) === String(s.job_id)))
+    : [];
 
   return (
     <section className="view">
@@ -206,91 +181,88 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
           </div>
         </div>
         <div className="head-actions">
-          <button className="btn" onClick={() => setEditing(!editing)}>{editing ? 'Cancel' : 'Edit'}</button>
           <button className="btn danger" onClick={doDelete}>Delete</button>
-          <div className="run-wrap">
-            <button className="btn primary" onClick={() => setRunMenuOpen((o) => !o)} disabled={running}>
-              {running ? 'Running…' : '▶ Run'}
-            </button>
-            {runMenuOpen && (
-              <div className="run-menu card">
-                <label className="field">
-                  <span>Provider</span>
-                  <select className="input" value={runForm.provider} onChange={(e) => pickRun(e.target.value)}>
-                    {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Model</span>
-                  <select className="input mono" value={runForm.model} onChange={setRunFormWrap('model')}>
-                    {modelsForProvider(runForm.provider).length === 0 && <option value="">(custom)</option>}
-                    {modelsForProvider(runForm.provider).map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Harness</span>
-                  <select className="input" value={runForm.harness} onChange={setRunFormWrap('harness')}>
-                    {HARNESSES.map((h) => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </label>
-                <button className="btn primary block" onClick={startRun}>Queue run</button>
-              </div>
-            )}
-          </div>
+          <button className="btn primary" onClick={startRun} disabled={running}>
+            {running ? 'Running…' : '▶ Run'}
+          </button>
         </div>
       </div>
 
-      {editing ? (
-        <form className="card form" onSubmit={saveEdit}>
-          <label className="field"><span>Title</span><input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label>
-          <div className="row">
-            <label className="field"><span>Type</span>
-              <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </label>
-            <label className="field"><span>Status</span>
-              <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                {['backlog', 'in_progress', 'review', 'done'].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
+      <div className="card spec-detail">
+        {spec.description && <p className="spec-description">{spec.description}</p>}
+        {spec.acceptance_criteria && (
+          <div>
+            <h4>Acceptance Criteria</h4>
+            <pre className="criteria mono">{spec.acceptance_criteria}</pre>
           </div>
-          <label className="field"><span>Repo</span><input className="input mono" value={form.repo} onChange={(e) => setForm({ ...form, repo: e.target.value })} /></label>
-          <label className="field"><span>Description</span><textarea className="input" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-          <label className="field"><span>Acceptance Criteria</span><textarea className="input mono" rows={6} value={form.acceptance_criteria} onChange={(e) => setForm({ ...form, acceptance_criteria: e.target.value })} /></label>
-          <div className="form-actions"><button type="submit" className="btn primary">Save</button></div>
-        </form>
-      ) : (
-        <div className="card spec-detail">
-          {spec.description && <p className="spec-description">{spec.description}</p>}
-          {spec.acceptance_criteria && (
-            <div>
-              <h4>Acceptance Criteria</h4>
-              <pre className="criteria mono">{spec.acceptance_criteria}</pre>
-            </div>
-          )}
-          {!spec.description && !spec.acceptance_criteria && <p className="muted">No description or acceptance criteria yet.</p>}
-          <p className="muted small">Created {fmtTs(spec.created_at)}</p>
+        )}
+        {!spec.description && !spec.acceptance_criteria && <p className="muted">No description or acceptance criteria yet.</p>}
+        <p className="muted small">Created {fmtTs(spec.created_at)}</p>
+      </div>
+
+      <h3 className="section-title">Pipeline</h3>
+      <div className="card pipeline-card">
+        <div className="pipeline-display">
+          <div>
+            <span className="muted small">Selected pipeline</span>
+            <div className="pipeline-name">{pipelineName || <span className="mono">{spec.pipeline_id || 'default'}</span>}</div>
+          </div>
+          <label className="field pipeline-select">
+            <span>Switch pipeline</span>
+            <select className="input" value={spec.pipeline_id || 'default'} onChange={(e) => changePipeline(e.target.value)}>
+              {(pipelines || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="default">default</option>
+              <option value="__new__">＋ New pipeline…</option>
+            </select>
+          </label>
         </div>
-      )}
+        <div className="flow-hint mono" title="Pipeline flow">
+          <span className="flow-glyph">⇢</span> {steps.length ? flowHint(steps) : 'No steps configured for this pipeline.'}
+        </div>
+      </div>
 
       <h3 className="section-title">Runs</h3>
       <div className="card jobs">
-        {specJobs.length === 0 ? (
+        {gatedJobs.length > 0 && (
+          <div className="gate-list">
+            {gatedJobs.map((j) => (
+              <div key={j.id} className="gate-banner">
+                <div className="gate-title">
+                  ⏸ Awaiting approval to proceed to <b className="mono">{j.gate_step || 'next step'}</b>
+                  <span className="muted small mono"> · job {String(j.id).slice(0, 8)}</span>
+                </div>
+                <input
+                  className="input mono gate-note"
+                  placeholder="Optional note (sent to the agent)…"
+                  value={gateNotes[j.id] || ''}
+                  onChange={(e) => setGateNotes((g) => ({ ...g, [j.id]: e.target.value }))}
+                />
+                <div className="gate-actions">
+                  <button className="btn primary small" onClick={() => gateAction(j, 'approve')}>✓ Approve</button>
+                  <button className="btn danger small" onClick={() => gateAction(j, 'reject')}>✕ Reject</button>
+                  <button className="btn ghost small" onClick={() => gateAction(j, 'retry')}>⟳ Retry current</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {jobs.length === 0 ? (
           <p className="muted">No runs yet. Click <b>▶ Run</b> to get started.</p>
         ) : (
           <table className="jobs-table">
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Harness</th><th>Model</th><th>Provider</th><th>PR</th><th>Created</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Step</th><th>PR</th><th>Created</th></tr>
             </thead>
             <tbody>
-              {specJobs.map((j) => (
+              {jobs.map((j) => (
                 <tr key={j.id} className={String(j.id) === String(selectedJob) ? 'selected' : ''} onClick={() => setSelectedJob(j.id)}>
                   <td className="mono">{String(j.id).slice(0, 8)}</td>
-                  <td><span className={`badge ${statusClass(j.status)}`}>{j.status}</span></td>
-                  <td>{j.harness}</td>
-                  <td className="mono">{j.model}</td>
-                  <td>{j.provider}</td>
+                  <td>
+                    <span className={`badge ${statusClass(j.status)}`}>{j.status}</span>
+                    {j.gate_state === 'waiting' && <span className="badge status-gated">⏸ gated</span>}
+                  </td>
+                  <td>{typeof j.step_index === 'number' ? `step ${j.step_index + 1}` : '—'}{j.gate_step ? <span className="muted small mono"> · {j.gate_step}</span> : null}</td>
                   <td>{j.pr_url ? <a href={j.pr_url} target="_blank" rel="noreferrer">PR ↗</a> : <span className="muted">—</span>}</td>
                   <td className="muted small">{fmtTs(j.created_at)}</td>
                 </tr>
@@ -298,8 +270,8 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
             </tbody>
           </table>
         )}
-        {specJobs.filter((j) => j.error).map((j) => (
-          <p key={j.id} className="job-error mono">[{String(j.id).slice(0,8)}] {j.error}</p>
+        {jobs.filter((j) => j.error).map((j) => (
+          <p key={j.id} className="job-error mono">[{String(j.id).slice(0, 8)}] {j.error}</p>
         ))}
       </div>
 
@@ -345,9 +317,6 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
           </>
         )}
       </div>
-
-      <h3 className="section-title">Steps</h3>
-      <StepsBuilder steps={steps} onChange={setSteps} onSave={saveSteps} saving={savingSteps} />
 
       <h3 className="section-title">Agent Session</h3>
       <div className="card chat-card">

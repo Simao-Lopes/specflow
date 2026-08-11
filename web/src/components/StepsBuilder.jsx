@@ -243,7 +243,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete 
   );
 }
 
-export default function StepsBuilder({ steps, onChange, onSave, saving }) {
+export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps' }) {
   const list = Array.isArray(steps) ? steps : defaultSteps();
 
   const patch = (i, patchObj) => {
@@ -284,7 +284,7 @@ export default function StepsBuilder({ steps, onChange, onSave, saving }) {
       <div className="steps-actions">
         <button type="button" className="btn" onClick={() => onChange([...list, emptyStep('step')])}>+ Add step</button>
         <button type="button" className="btn primary" onClick={onSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save steps'}
+          {saving ? 'Saving…' : saveLabel}
         </button>
       </div>
     </div>

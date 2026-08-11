@@ -2,21 +2,40 @@ import { useState } from 'react';
 import api from '../api.js';
 import { TYPES } from './SpecBoard.jsx';
 
-const EMPTY = { title: '', description: '', type: 'feature', repo: '', acceptance_criteria: '' };
+const EMPTY = { title: '', description: '', type: 'feature', repo: '', acceptance_criteria: '', pipeline_id: 'default' };
 
-export default function NewSpec({ onNotify, onSaved }) {
-  const [form, setForm] = useState(EMPTY);
+export default function NewSpec({ onNotify, onSaved, pipelines, initialDraft, onDraftChange, onOpenPipelinesForNew }) {
+  const [form, setForm] = useState(() => { const d = initialDraft && Object.keys(initialDraft).length ? initialDraft : EMPTY; return { ...EMPTY, ...d }; });
   const [submitting, setSubmitting] = useState(false);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => {
+    setForm((f) => {
+      const nf = { ...f, [k]: e.target.value };
+      if (onDraftChange) onDraftChange(nf);
+      return nf;
+    });
+  };
+
+  const changePipeline = (val) => {
+    if (val === '__new__') {
+      onOpenPipelinesForNew();
+      return;
+    }
+    setForm((f) => {
+      const nf = { ...f, pipeline_id: val };
+      if (onDraftChange) onDraftChange(nf);
+      return nf;
+    });
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) { onNotify('Title is required', 'error'); return; }
     setSubmitting(true);
     try {
-      const spec = await api.createSpec({ ...form, title: form.title.trim() });
+      const spec = await api.createSpec({ ...form, title: form.title.trim(), pipeline_id: form.pipeline_id || 'default' });
       onNotify(`Created spec "${spec.title || form.title}"`, 'success');
+      if (onDraftChange) onDraftChange(EMPTY);
       setForm(EMPTY);
       onSaved();
     } catch (err) {
@@ -25,6 +44,8 @@ export default function NewSpec({ onNotify, onSaved }) {
       setSubmitting(false);
     }
   };
+
+  const selectedId = form.pipeline_id || 'default';
 
   return (
     <section className="view">
@@ -49,6 +70,15 @@ export default function NewSpec({ onNotify, onSaved }) {
             <input className="input mono" value={form.repo} onChange={set('repo')} placeholder="owner/repo or URL" />
           </label>
         </div>
+
+        <label className="field">
+          <span>Pipeline</span>
+          <select className="input" value={selectedId} onChange={(e) => changePipeline(e.target.value)}>
+            {(pipelines || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <option value="default">default</option>
+            <option value="__new__">＋ New pipeline…</option>
+          </select>
+        </label>
 
         <label className="field">
           <span>Description</span>

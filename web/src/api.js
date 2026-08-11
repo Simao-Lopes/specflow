@@ -40,9 +40,20 @@ export const api = {
   listJobs: (specId) => request(`/api/jobs?specId=${encodeURIComponent(specId || '')}`),
   jobLogs: (jobId, limit = 500) => request(`/api/jobs/${jobId}/logs?limit=${limit}`),
 
-  // Steps pipeline (GET returns array, PUT sends the raw steps array as body)
+  // Human gate: advance a paused job (action: approve | reject | retry).
+  gateJob: (jobId, action, note) => request(`/api/jobs/${jobId}/gate`, { method: 'POST', body: { action, ...(note ? { note } : {}) } }),
+
+  // Pipelines (first-class, reusable entities).
+  listPipelines: () => request('/api/pipelines'),
+  getPipeline: (id) => request(`/api/pipelines/${id}`),
+  createPipeline: (body) => request('/api/pipelines', { method: 'POST', body }),
+  updatePipeline: (id, body) => request(`/api/pipelines/${id}`, { method: 'PATCH', body }),
+  deletePipeline: (id) => request(`/api/pipelines/${id}`, { method: 'DELETE' }),
+
+  // Spec pipeline steps: resolves the spec's pipeline into a read-only steps array.
+  getSpecSteps: (id) => request(`/api/specs/${id}/steps`),
+  // Backward-compatible alias for the same endpoint.
   getSteps: (id) => request(`/api/specs/${id}/steps`),
-  saveSteps: (id, steps) => request(`/api/specs/${id}/steps`, { method: 'PUT', body: steps }),
 
   // Per-spec agent-session messages
   listMessages: (id) => request(`/api/specs/${id}/messages`),
