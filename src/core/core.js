@@ -13,7 +13,7 @@ import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
 import { resolveMethod } from '../methods/catalog.js';
 import { PIPELINE_PRESETS } from './presets.js';
 import { jobDefaults, autoVersionPipeline } from './settings.js';
-import { writePipelineToDisk, deletePipelineFromDisk, listPipelineFolders } from './pipelinestore.js';
+import { writePipelineToDisk, deletePipelineFromDisk, pipelinesFromDisk } from './pipelinestore.js';
 import { materializePrompts } from '../methods/catalog.js';
 
 let runner;
@@ -161,10 +161,9 @@ export function listPresets() {
 // are honoured. Called on server start. Returns the number of pipelines loaded.
 export function syncPipelinesFromDisk() {
   const root = repoRootPath();
-  const dirs = listPipelineFolders({ repoRoot: root });
+  const dirs = pipelinesFromDisk({ repoRoot: root });
   let loaded = 0;
   for (const p of dirs) {
-    // Only upsert if the id is present; skip seedlings without an id.
     if (!p.id) continue;
     const exists = getDb().prepare('SELECT id FROM pipelines WHERE id=?').get(p.id);
     if (exists) {
