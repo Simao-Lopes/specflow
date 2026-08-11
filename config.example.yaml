@@ -1,0 +1,18 @@
+# SpecFlow configuration reference.
+# Values here are the default/provider-level settings; agents & specs can
+# override per-run. Copy to config.yaml or set via the UI/API.
+
+# Where SpecFlow reports results by default: web | rest | cli | whatsapp
+primary_channel: web
+
+# Optional default custom-harness command.
+# Placeholders: {checkout} {branch} {prompt_file}
+# custom_command: "claude -p \"$(cat {prompt_file})\" --dangerously-skip-permissions"
+
+# Optional model/endpoint overrides per provider (used when an agent leaves
+# model/provider blank). Usually not required — set on the agent instead.
+# providers:
+#   openrouter:
+#     model: deepseek/deepseek-chat
+#   nvidia:
+#     model: nvidia/llama-3.1-nemotron-70b-instruct

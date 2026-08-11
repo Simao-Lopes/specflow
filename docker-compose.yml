@@ -1,0 +1,20 @@
+version: "3.8"
+services:
+  specflow:
+    build: .
+    container_name: specflow
+    restart: unless-stopped
+    ports:
+      - "${SPECFLOW_PORT:-9120}:9120"
+    env_file:
+      - .env
+    environment:
+      SPECFLOW_DB: /data/specflow.db
+      SPECFLOW_REPO_ROOT: /work
+    volumes:
+      - specflow-data:/data
+      - specflow-work:/work
+      - /root/.ssh:/root/.ssh:ro   # for git push over ssh
+volumes:
+  specflow-data:
+  specflow-work:

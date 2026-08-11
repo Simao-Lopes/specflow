@@ -1,0 +1,21 @@
+# SpecFlow systemd unit — run the agent server on this box.
+[Unit]
+Description=SpecFlow spec-driven dev orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/specflow
+EnvironmentFile=/home/ubuntu/specflow/.env
+ExecStart=/usr/bin/node src/api/server-entry.js
+Restart=on-failure
+RestartSec=5
+# Keep it isolated from the Hermes gateway service; does not touch it.
+# Hardening
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
