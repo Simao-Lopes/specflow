@@ -20,6 +20,8 @@
 - **Spec-driven workflow** — features go through `backlog → in_progress → review → done`.
 - **Editable steps pipeline** — each spec is implemented as a chain of steps (default `Plan → Code`). Reorder, add, edit, or delete steps in the UI.
 - **Method-driven steps** — every step (and verify sub-agent) picks a method: an **industry template** (per phase `plan`/`code`/`test`, ordered simplest → most complex — Sketch→Specify→ADR→full design; Direct→TDD→Spec-first→Conventional→Parallel; Smoke→Unit→Contract→Integration→E2E) **or a custom action** — a script you drop in `<repoRoot>/.specflow/actions/<phase>/`. Steps can also be fully custom. See `examples/custom-actions/` and `src/methods/catalog.js`.
+- **Prompts are materialized & stored** — the effective prompt for every step is written into the step on save + startup, so it is **always visible in the UI and editable/versioned** — not an invisible run-time side effect.
+- **Disk store for pipelines** — each pipeline persists as a git-versionable folder: `<repoRoot>/.specflow/pipelines/<id>-<slug>/pipeline.json` (pure struct, no prompts) + `prompts/<step>.md` (one editable prompt file per step). Edit the `.md` files directly; they're re-read on restart. See `src/core/pipelinestore.js`.
 - **Sub-agent verify flow (iterate)** — a step can define *verify sub-agents* (each also method-driven). If a verifier fails, the step re-runs with the failure fed back, up to its iteration budget — "code, then test, if test fails iterate".
 - **Human gates** — the pipeline pauses after each step awaiting your Approve / Reject / Retry.
 - **Interact with the agent** — every spec has an Agent Session chat. Messages persist and are injected into agent prompts as live guidance.
