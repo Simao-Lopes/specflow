@@ -1,14 +1,8 @@
 import { useState } from 'react';
-import { marked } from 'marked';
 import PromptEditor from './PromptEditor.jsx';
 
 const STEP_HARNESSES = ['custom', 'hermes', 'claude', 'llm'];
 const STEP_PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
-
-function markdown(text) {
-  if (!text || !text.trim()) return '<p class="muted">(no prompt yet)</p>';
-  try { return marked.parse(text); } catch { return `<pre>${String(text)}</pre>`; }
-}
 
 let _seq = 0;
 const uid = (p) => `${p}_${Date.now().toString(36)}${(_seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -351,13 +345,6 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
         </div>
       )}
 
-      <Field label="Prompt">
-        <textarea className="input mono prompt-ta" rows={5} value={step.prompt || ''} onChange={(e) => set({ prompt: e.target.value })} placeholder="This prompt is sent to the agent. It is materialized from the method (or fully custom)." />
-        <div className="prompt-live-preview">
-          <span className="muted small">Preview</span>
-          <div className="md-preview" dangerouslySetInnerHTML={{ __html: markdown(step.prompt) }} />
-        </div>
-      </Field>
       <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} method={step.method} resolvedPrompt={resolvedPrompt} notify={onNotify} onApplyRestore={onApplyRestore} />
 
       <VerifierList
