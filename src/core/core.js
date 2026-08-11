@@ -10,6 +10,7 @@ import { getDb, initStore, defaultPipelineSteps } from './store.js';
 import { emit, EVT } from './events.js';
 import { runHarness } from '../harnesses/index.js';
 import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
+import { resolveMethod } from '../methods/catalog.js';
 
 let runner;
 
@@ -394,7 +395,12 @@ export async function gateJob(jobId, action, note = '') {
 
 // Run one pipeline step, honouring its verify sub-agents and iteration budget.
 async function executeStep(job, spec, step, { checkout }) {
-  addLog(jobIdT(job), `— Step: ${step.name} (harness ${step.harness})`);
+  // Resolve an industry-method or custom-action into execution config when the
+  // step declares a `method`. Otherwise the step is fully custom as configured.
+  const method = resolveMethod(step, { repoRoot: jobRepoRoot() });
+  const runStep = method ? { ...step, ...pick(method, ['harness', 'command', 'prompt']) } : step;
+
+  addLog(jobIdT(job), `— Step: ${step.name}${method ? ` [method: ${method.name}]` : (step.harness ? ` (harness ${step.harness})` : '')}`);
   setStep(jobIdT(job), step, { status: 'running', attempt: 1 });
 
   const maxIter = Math.max(1, step.iterations || 1);
@@ -411,9 +417,9 @@ async function executeStep(job, spec, step, { checkout }) {
     try {
       const result = await runHarness({
         id: jobIdT(job),
-        harness: step.harness, model: step.model || job.model, provider: step.provider || job.provider,
+        harness: runStep.harness, model: step.model || job.model, provider: step.provider || job.provider,
         repo: job.repo, branch: job.branch,
-        step, feedback, lifecycle: 'work',
+        step: runStep, feedback, lifecycle: 'work',
       }, { checkout, repo: job.repo, spec });
       addLog(jobIdT(job), `  [${step.name}] harness done: ${result?.messages || result?.message || 'ok'}`);
       lastErr = null;
@@ -434,10 +440,14 @@ async function executeStep(job, spec, step, { checkout }) {
     if (step.verify?.length) {
       addLog(jobIdT(job), `  Running ${step.verify.length} verify sub-agent(s): ${step.verify.map(v => v.name).join(', ')}`);
       for (const v of step.verify) {
+        // Verify sub-agents may also declare a method (template or custom action).
+        const vMethod = resolveMethod(v, { repoRoot: jobRepoRoot() });
+        const runV = vMethod ? { ...v, ...pick(vMethod, ['harness', 'command', 'prompt']) } : v;
         // Gracefully skip verifiers that were added but not yet configured
-        // (e.g. a custom verifier with an empty command). Don't hard-fail.
-        const vh = v.harness || step.harness;
-        const unconfigured = (vh === 'custom' && !(v.command || '').trim());
+        // (e.g. a custom verifier with an empty command and no method — a method
+        // would supply the harness/command). Don't hard-fail.
+        const vh = runV.harness || step.harness || v.harness;
+        const unconfigured = !vMethod && vh === 'custom' && !(v.command || '').trim();
         if (unconfigured) {
           addLog(jobIdT(job), `  [${v.name}] not configured (no command) — skipping`);
           setStep(jobIdT(job), v, { status: 'skipped', detail: 'no command' });
@@ -450,7 +460,7 @@ async function executeStep(job, spec, step, { checkout }) {
             id: jobIdT(job),
             harness: vh, model: v.model || job.model, provider: v.provider || job.provider,
             repo: job.repo, branch: job.branch,
-            step: v, feedback, lifecycle: 'verify',
+            step: runV, feedback, lifecycle: 'verify',
           }, { checkout, repo: job.repo, spec });
           verifyMsgs.push(`[${v.name}] ${vres?.messages || vres?.message || 'passed'}`);
           addLog(jobIdT(job), `  [${v.name}] verify passed`);
@@ -484,6 +494,16 @@ async function executeStep(job, spec, step, { checkout }) {
 
 function jobIdT(job) {
   return typeof job === 'string' ? job : job.id;
+}
+
+function pick(obj, keys) {
+  const out = {};
+  for (const k of keys) if (obj[k] !== undefined && obj[k] !== '' && obj[k] !== null) out[k] = obj[k];
+  return out;
+}
+
+function jobRepoRoot() {
+  return getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value || process.cwd();
 }
 
 function getConfigContext(job) {

@@ -295,6 +295,13 @@ textarea.input.mono { font-family: var(--mono); font-size: 13px; line-height: 1.
 
 /* ---------- Steps pipeline builder ---------- */
 .steps-builder { display: flex; flex-direction: column; gap: 14px; }
+.method-select { color: var(--text); }
+.method-chip {
+  display: inline-flex; align-items: center; width: fit-content;
+  font-size: 11px; letter-spacing: 0.3px;
+  color: var(--violet); background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 999px; padding: 2px 10px;
+}
 .flow-hint {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 12px 14px; border: 1px solid var(--border);

@@ -14,10 +14,11 @@ import {
   listPipelines, getPipeline, createPipeline, updatePipeline, deletePipeline,
 } from '../core/core.js';
 import { on, EVT } from '../core/events.js';
-import { initStore } from '../core/store.js';
+import { initStore, getDb } from '../core/store.js';
 import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, getPrimaryChannel, startNotificationBridge } from '../channels/router.js';
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
 import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
+import { templateCatalog, listCustomActions, PHASE_LABELS } from '../methods/catalog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +45,18 @@ export function buildServer({ dbPath, port }) {
   app.get('/api/agents', async () => listAgents());
   app.put('/api/agents', async (req) => upsertAgent(req.body));
   app.delete('/api/agents/:id', async (req) => { deleteAgent(req.params.id); return { ok: true }; });
+
+  // Methods library — industry templates (simplest→complex) + custom actions
+  // defined in <repoRoot>/.specflow/actions/<phase>/.
+  app.get('/api/methods', async () => {
+    const rr = getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value;
+    return {
+      phases      : PHASE_LABELS,
+      templates   : templateCatalog(),
+      custom      : listCustomActions({ repoRoot: rr }),
+      repoRoot    : rr,
+    };
+  });
 
   // Pipelines (dedicated, reusable step definitions)
   app.get('/api/pipelines', async () => listPipelines());

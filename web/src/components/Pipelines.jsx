@@ -18,6 +18,17 @@ export default function Pipelines({
   const [form, setForm] = useState({ name: '', description: '' });
   const [saving, setSaving] = useState(false);
 
+  // Method library (industry templates + custom actions), fetched once on mount.
+  const [methods, setMethods] = useState(undefined);
+
+  useEffect(() => {
+    let active = true;
+    api.getMethods()
+      .then((data) => { if (active) setMethods(data || undefined); })
+      .catch(() => { if (active) setMethods(undefined); }); // graceful fallback
+    return () => { active = false; };
+  }, []);
+
   // Re-sync from the backend whenever a 'pipeline' socket event fires.
   useEffect(() => {
     if (Array.isArray(pipelineEvent) && pipelineEvent.length) onChanged();
@@ -94,7 +105,7 @@ export default function Pipelines({
             <textarea className="input" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What does this pipeline do?" />
           </label>
 
-          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} />
+          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} methods={{ templates: methods?.templates || {}, custom: methods?.custom || {}, phases: methods?.phases || {} }} />
 
           <div className="form-actions">
             <button type="button" className="btn ghost" onClick={cancel}>Cancel</button>

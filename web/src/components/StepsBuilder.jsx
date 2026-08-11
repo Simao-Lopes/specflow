@@ -12,6 +12,7 @@ export function defaultSteps() {
     {
       id: 'plan',
       name: 'Plan',
+      method: '',
       harness: 'llm',
       provider: 'gemini',
       model: 'gemini-3.5-flash-lite',
@@ -24,6 +25,7 @@ export function defaultSteps() {
     {
       id: 'code',
       name: 'Code',
+      method: '',
       harness: 'hermes',
       provider: null,
       model: null,
@@ -33,6 +35,7 @@ export function defaultSteps() {
         {
           id: 'test',
           name: 'Test',
+          method: '',
           harness: 'custom',
           command: '',
           iterations: 1,
@@ -52,6 +55,7 @@ export function defaultSteps() {
 const emptyStep = (prefix) => ({
   id: uid(prefix),
   name: '',
+  method: '',
   harness: 'llm',
   provider: 'gemini',
   model: '',
@@ -124,8 +128,75 @@ function ModelSelect({ provider, model, onChange, models }) {
   );
 }
 
+// Resolve a method id against the library to display its kind + label chip.
+function findMethod(methods, id) {
+  if (!id || !methods) return null;
+  const scan = (group) => {
+    const g = methods[group] || {};
+    for (const phase of Object.keys(g)) {
+      const found = (g[phase] || []).find((x) => x && x.id === id);
+      if (found) return { ...found, phase, kind: group === 'templates' ? 'template' : 'custom' };
+    }
+    return null;
+  };
+  return scan('templates') || scan('custom');
+}
+
+// Method picker: default "custom (full control)", industry templates grouped
+// by phase (simplest→most complex), and custom actions. Sets only step.method.
+function MethodSelect({ value, onChange, methods }) {
+  const phases = (methods && methods.phases) || {};
+  const templates = (methods && methods.templates) || {};
+  const customActions = (methods && methods.custom) || {};
+
+  // Keep backend (object key) order; fall back to a fixed logical order if the
+  // shape is unexpected or empty.
+  const templateOrder = Object.keys(templates).length ? Object.keys(templates) : ['plan', 'code', 'test'];
+  const customOrder = Object.keys(customActions).length ? Object.keys(customActions) : ['plan', 'code', 'test'];
+  const phaseLabel = (ph) => (phases && phases[ph]) || ph;
+
+  const hasTemplates = templateOrder.some((ph) => (templates[ph] || []).length);
+  const hasCustom = customOrder.some((ph) => (customActions[ph] || []).length);
+  const active = findMethod(methods, value);
+
+  return (
+    <Field label="Method">
+      <select
+        className="input method-select"
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value || '')}
+      >
+        <option value="">— custom (full control) —</option>
+        {hasTemplates && (
+          <optgroup label="Templates">
+            {templateOrder.map((ph) =>
+              (templates[ph] || []).map((tmpl) => (
+                <option key={tmpl.id} value={tmpl.id}>{`[${phaseLabel(ph)}] ${tmpl.name}`}</option>
+              ))
+            )}
+          </optgroup>
+        )}
+        {hasCustom && (
+          <optgroup label="Custom actions">
+            {customOrder.map((ph) =>
+              (customActions[ph] || []).map((a) => (
+                <option key={a.id} value={a.id}>{`[${phaseLabel(ph)}] ${a.name || a.id}`}</option>
+              ))
+            )}
+          </optgroup>
+        )}
+      </select>
+      {active && (
+        <span className="method-chip mono" title={`method: ${value}`}>
+          {active.kind} · {active.phase} · {value}
+        </span>
+      )}
+    </Field>
+  );
+}
+
 // Editable sub-agents (the verify flow) for a single step.
-function VerifierList({ verifiers, onChange, models }) {
+function VerifierList({ verifiers, onChange, models, methods }) {
   const [open, setOpen] = useState(true);
 
   const setVerifier = (i, patch) => {
@@ -165,6 +236,7 @@ function VerifierList({ verifiers, onChange, models }) {
       {open &&
         verifiers.map((v, i) => (
           <div className="verify-item" key={v.id}>
+            <MethodSelect value={v.method} onChange={(m) => setVerifier(i, { method: m })} methods={methods} />
             <Field label="Name">
               <input className="input" value={v.name} onChange={(e) => setVerifier(i, { name: e.target.value })} placeholder="e.g. Test" />
             </Field>
@@ -214,7 +286,7 @@ function VerifierList({ verifiers, onChange, models }) {
 }
 
 // One editable step card.
-function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models }) {
+function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods }) {
   const set = (patch) => onPatch(index, patch);
 
   return (
@@ -233,6 +305,8 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
           <button type="button" className="btn small danger" onClick={() => onDelete(index)}>✕</button>
         </span>
       </div>
+
+      <MethodSelect value={step.method} onChange={(m) => set({ method: m })} methods={methods} />
 
       <div className="row">
         <Field label="Harness">
@@ -277,12 +351,13 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
         verifiers={step.verify || []}
         onChange={(verify) => set({ verify })}
         models={models}
+        methods={methods}
       />
     </div>
   );
 }
 
-export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models }) {
+export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models, methods }) {
   const list = Array.isArray(steps) ? steps : defaultSteps();
 
   const patch = (i, patchObj) => {
@@ -317,6 +392,7 @@ export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabe
             onMoveDown={(idx) => move(idx, 1)}
             onDelete={remove}
             models={models}
+            methods={methods}
           />
         ))}
       </div>

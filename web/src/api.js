@@ -61,6 +61,9 @@ export const api = {
 
   getConfig: () => request('/api/config'),
   setChannel: (name, enabled) => request(`/api/channels/${encodeURIComponent(name)}`, { method: 'POST', body: { enabled } }),
+
+  // Method library: industry templates + custom actions for pipeline steps.
+  getMethods: () => request('/api/methods'),
 };
 
 export default api;
