@@ -105,7 +105,7 @@ export default function Pipelines({
             <textarea className="input" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What does this pipeline do?" />
           </label>
 
-          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} methods={{ templates: methods?.templates || {}, custom: methods?.custom || {}, phases: methods?.phases || {} }} />
+          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} methods={{ templates: methods?.templates || {}, custom: methods?.custom || {}, phases: methods?.phases || {} }} pipelineId={isEdit ? editor.pipeline?.id : null} onNotify={onNotify} />
 
           <div className="form-actions">
             <button type="button" className="btn ghost" onClick={cancel}>Cancel</button>

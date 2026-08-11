@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PromptEditor from './PromptEditor.jsx';
 
 const STEP_HARNESSES = ['custom', 'hermes', 'claude', 'llm'];
 const STEP_PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
@@ -286,7 +287,7 @@ function VerifierList({ verifiers, onChange, models, methods }) {
 }
 
 // One editable step card.
-function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods }) {
+function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods, pipelineId, onApplyRestore }) {
   const set = (patch) => onPatch(index, patch);
 
   return (
@@ -346,6 +347,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
       <Field label="Prompt">
         <textarea className="input mono" rows={2} value={step.prompt} onChange={(e) => set({ prompt: e.target.value })} placeholder="Optional step instructions for the agent" />
       </Field>
+      <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} notify={onNotify} onApplyRestore={(text) => set({ prompt: text })} />
 
       <VerifierList
         verifiers={step.verify || []}
@@ -357,7 +359,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
   );
 }
 
-export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models, methods }) {
+export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models, methods, pipelineId, onNotify }) {
   const list = Array.isArray(steps) ? steps : defaultSteps();
 
   const patch = (i, patchObj) => {
@@ -393,6 +395,8 @@ export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabe
             onDelete={remove}
             models={models}
             methods={methods}
+            pipelineId={pipelineId}
+            onNotify={onNotify}
           />
         ))}
       </div>

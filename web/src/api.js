@@ -62,6 +62,21 @@ export const api = {
   getConfig: () => request('/api/config'),
   setChannel: (name, enabled) => request(`/api/channels/${encodeURIComponent(name)}`, { method: 'POST', body: { enabled } }),
 
+  // Editable preferences.
+  getSettings: () => request('/api/settings'),
+  updateSettings: (body) => request('/api/settings', { method: 'PUT', body }),
+
+  // Git connections (named repos).
+  listConnections: () => request('/api/connections'),
+  addConnection: (body) => request('/api/connections', { method: 'POST', body }),
+  deleteConnection: (id) => request(`/api/connections/${id}`, { method: 'DELETE' }),
+  testConnection: (id) => request(`/api/connections/${id}/test`, { method: 'POST' }),
+
+  // Pipeline step prompt versioning.
+  promptVersions: (pid, sid) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`),
+  savePromptVersion: (pid, sid, body) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`, { method: 'POST', body }),
+  restorePromptVersion: (pid, sid, version) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions/restore/${encodeURIComponent(version)}`, { method: 'POST' }),
+
   // Method library: industry templates + custom actions for pipeline steps.
   getMethods: () => request('/api/methods'),
 };
