@@ -15,7 +15,7 @@ import { on, EVT } from '../core/events.js';
 import { initStore } from '../core/store.js';
 import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, getPrimaryChannel, startNotificationBridge } from '../channels/router.js';
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
-import { MODEL_CATALOG } from '../llm/providers.js';
+import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +59,7 @@ export function buildServer({ dbPath, port }) {
   app.get('/api/config', async () => ({
     primaryChannel : getPrimaryChannel(),
     models         : MODEL_CATALOG,
+    providers      : PROVIDER_LIST,
     channels       : listChannels(),
   }));
 

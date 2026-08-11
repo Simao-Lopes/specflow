@@ -2,7 +2,7 @@ import { useState } from 'react';
 import api from '../api.js';
 
 const HARNESSES = ['custom', 'hermes', 'claude', 'llm', 'plain'];
-const PROVIDERS = ['openrouter', 'nvidia', 'gemini', 'custom'];
+const PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
 const EMPTY = { name: '', harness: 'hermes', model: '', provider: 'openrouter', repo: '', branch_prefix: 'feature/', auto_pr: false, active: true };
 
 function Toggle({ checked, onChange, label }) {

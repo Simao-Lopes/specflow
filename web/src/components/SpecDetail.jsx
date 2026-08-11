@@ -3,7 +3,7 @@ import api from '../api.js';
 import { TYPES, statusClass, fmtTs } from './SpecBoard.jsx';
 
 const HARNESSES = ['custom', 'hermes', 'claude', 'llm', 'plain'];
-const PROVIDERS = ['openrouter', 'nvidia', 'gemini', 'custom'];
+const PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
 
 export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent, onRefreshJob }) {
   const [spec, setSpec] = useState(null);
