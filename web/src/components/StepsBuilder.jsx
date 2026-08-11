@@ -286,10 +286,27 @@ function VerifierList({ verifiers, onChange, models, methods }) {
   );
 }
 
-// One editable step card.
+// One editable step card. Collapsed by default: shows the node name + rendered
+// prompt only. Everything else (method, harness, iterations, command, verify)
+// expands behind a toggle — mobile-friendly.
 function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods, pipelineId, onNotify, resolvedPrompt }) {
   const set = (patch) => onPatch(index, patch);
   const onApplyRestore = (text) => set({ prompt: text });
+  const [open, setOpen] = useState(false);
+
+  const methodName = methods && step.method
+    ? (() => {
+        for (const ph of Object.keys(methods?.templates || {})) {
+          const t = (methods.templates[ph] || []).find((x) => x.id === step.method);
+          if (t) return `[${methods.phases?.[ph] || ph}] ${t.name}`;
+        }
+        for (const ph of Object.keys(methods?.custom || {})) {
+          const c = (methods.custom[ph] || []).find((x) => x.id === step.method);
+          if (c) return `[${methods.phases?.[ph] || ph}] ${c.name}`;
+        }
+        return '';
+      })()
+    : '';
 
   return (
     <div className="step-card card">
@@ -302,57 +319,64 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
           onChange={(e) => set({ name: e.target.value })}
         />
         <span className="step-order">
+          <button type="button" className="btn small ghost" onClick={() => setOpen((o) => !o)} title={open ? 'Collapse' : 'Expand'}>{open ? '▾' : '▸'}</button>
           <button type="button" className="btn small ghost" disabled={index === 0} onClick={() => onMoveUp(index)}>↑</button>
           <button type="button" className="btn small ghost" disabled={index === count - 1} onClick={() => onMoveDown(index)}>↓</button>
           <button type="button" className="btn small danger" onClick={() => onDelete(index)}>✕</button>
         </span>
       </div>
 
-      <MethodSelect value={step.method} onChange={(m) => set({ method: m })} methods={methods} />
-
-      <div className="row">
-        <Field label="Harness">
-          <select className="input" value={step.harness} onChange={(e) => set({ harness: e.target.value })}>
-            {STEP_HARNESSES.map((h) => <option key={h} value={h}>{h}</option>)}
-          </select>
-        </Field>
-        <Field label="On failure">
-          <select className="input" value={step.on_failure} onChange={(e) => set({ on_failure: e.target.value })}>
-            <option value="stop">stop</option>
-            <option value="continue">continue</option>
-          </select>
-        </Field>
-        <Field label="Iterations">
-          <input type="number" min={1} className="input" value={step.iterations} onChange={(e) => set({ iterations: Number(e.target.value) || 1 })} />
-        </Field>
-      </div>
-
-      {step.harness === 'custom' ? (
-        <Field label="Command">
-          <input className="input mono" value={step.command} onChange={(e) => set({ command: e.target.value })} placeholder="e.g. npm run build" />
-        </Field>
-      ) : (
-        <div className="row">
-          <Field label="Provider">
-            <select className="input" value={step.provider || ''} onChange={(e) => set({ provider: e.target.value || null })}>
-              <option value="">(none)</option>
-              {STEP_PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </Field>
-          <Field label="Model">
-            <ModelSelect provider={step.provider} model={step.model || null} models={models} onChange={(m) => set({ model: m })} />
-          </Field>
-        </div>
-      )}
+      {methodName && <div className="step-method-chip mono">{methodName}</div>}
 
       <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} method={step.method} resolvedPrompt={resolvedPrompt} notify={onNotify} onApplyRestore={onApplyRestore} />
 
-      <VerifierList
-        verifiers={step.verify || []}
-        onChange={(verify) => set({ verify })}
-        models={models}
-        methods={methods}
-      />
+      {open && (
+        <div className="step-config">
+          <MethodSelect value={step.method} onChange={(m) => set({ method: m })} methods={methods} />
+
+          <div className="row">
+            <Field label="Harness">
+              <select className="input" value={step.harness} onChange={(e) => set({ harness: e.target.value })}>
+                {STEP_HARNESSES.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </Field>
+            <Field label="On failure">
+              <select className="input" value={step.on_failure} onChange={(e) => set({ on_failure: e.target.value })}>
+                <option value="stop">stop</option>
+                <option value="continue">continue</option>
+              </select>
+            </Field>
+            <Field label="Iterations">
+              <input type="number" min={1} className="input" value={step.iterations} onChange={(e) => set({ iterations: Number(e.target.value) || 1 })} />
+            </Field>
+          </div>
+
+          {step.harness === 'custom' ? (
+            <Field label="Command">
+              <input className="input mono" value={step.command} onChange={(e) => set({ command: e.target.value })} placeholder="e.g. npm run build" />
+            </Field>
+          ) : (
+            <div className="row">
+              <Field label="Provider">
+                <select className="input" value={step.provider || ''} onChange={(e) => set({ provider: e.target.value || null })}>
+                  <option value="">(none)</option>
+                  {STEP_PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
+              <Field label="Model">
+                <ModelSelect provider={step.provider} model={step.model || null} models={models} onChange={(m) => set({ model: m })} />
+              </Field>
+            </div>
+          )}
+
+          <VerifierList
+            verifiers={step.verify || []}
+            onChange={(verify) => set({ verify })}
+            models={models}
+            methods={methods}
+          />
+        </div>
+      )}
     </div>
   );
 }

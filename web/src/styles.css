@@ -319,6 +319,15 @@ textarea.input.mono { font-family: var(--mono); font-size: 13px; line-height: 1.
 }
 .step-name { flex: 1; }
 .step-order { display: flex; gap: 4px; }
+.step-method-chip {
+  width: fit-content; font-size: 12px; color: var(--violet);
+  padding: 3px 10px; border: 1px solid var(--border-2); border-radius: 999px;
+  background: rgba(99, 102, 241, 0.08);
+}
+.step-config {
+  display: flex; flex-direction: column; gap: 12px; margin-top: 2px;
+  border-top: 1px dashed var(--border-2); padding-top: 12px;
+}
 .verify-block {
   display: flex; flex-direction: column; gap: 10px;
   border: 1px dashed var(--border-2); border-radius: 10px; padding: 12px;
