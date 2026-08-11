@@ -72,7 +72,7 @@ See `config.example.yaml` and `.env.example`. Key options:
 
 ## Harnesses
 
-- **`hermes`** — drives `hermes run` headless (Hermes Agent). Set `HERMES_BIN` if needed.
+- **`hermes`** — drives Hermes Agent headless (`hermes chat -q "<prompt>"`). Set `HERMES_BIN` to the hermes CLI path and ensure it's on the service PATH.
 - **`claude`** — Claude Code CLI (`claude -p ... --dangerously-skip-permissions`).
 - **`custom`** — arbitrary shell command; set `custom_command` in `config.example.yaml`. The template placeholders `{checkout}`, `{branch}`, `{prompt_file}` are replaced.
 - **`llm`** — direct completion (no code agent): useful for planning/review.

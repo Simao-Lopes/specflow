@@ -9,6 +9,8 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/specflow
 EnvironmentFile=/home/ubuntu/specflow/.env
+# Ensure the Hermes CLI on the user PATH is reachable by the Spawn harnesses
+Environment="PATH=/home/ubuntu/.local/bin:/home/ubuntu/.hermes/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/home/ubuntu/.hermes/node/bin/node src/api/server-entry.js
 Restart=on-failure
 RestartSec=5

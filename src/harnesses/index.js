@@ -59,11 +59,12 @@ async function buildPrompt(context, job) {
 }
 
 const HARNESSES = {
-  // Hermes headless: 'hermes run "prompt" -c <checkout>'
+  // Hermes headless: 'hermes chat -q "<prompt>"' executed in the checkout.
+  // Workdir is set via the spawn cwd option (not a CLI flag).
   hermes: {
     async run(job, context) {
       const prompt = await buildPrompt(context, job);
-      const args = ['run', prompt, '-c', context.checkout];
+      const args = ['chat', '-q', prompt];
       if (job.model) args.push('-m', job.model);
       return streamProc(process.env.HERMES_BIN || 'hermes', args, {
         cwd   : context.checkout,
