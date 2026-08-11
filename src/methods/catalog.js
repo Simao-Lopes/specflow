@@ -91,6 +91,34 @@ Follow conventional commit style, keep changes structured into logical commits, 
     },
   ],
 
+  docs: [
+    {
+      id: 'docs-update', name: 'Update docs', complexity: 1,
+      harness: 'llm',
+      tpl: 'Update the project documentation to reflect: {description}. Acceptance: {acceptance}. Keep changes accurate and concise; update README and relevant guides if they are affected.',
+    },
+    {
+      id: 'docs-changelog', name: 'Changelog + release notes', complexity: 2,
+      harness: 'llm',
+      tpl: 'Write changelog/release-note entries for: {description}. Acceptance: {acceptance}. Use conventional-changelog style (Added/Changed/Fixed/Deprecated/Removed), referencing the work done.',
+    },
+    {
+      id: 'docs-api', name: 'API reference (OpenAPI/docstrings)', complexity: 3,
+      harness: 'llm',
+      tpl: 'Document the API surface for: {description}. Acceptance: {acceptance}. Produce/update OpenAPI schemas or docstrings for every public endpoint/function, with examples.',
+    },
+    {
+      id: 'docs-migration', name: 'Migration & upgrade guide', complexity: 4,
+      harness: 'llm',
+      tpl: 'Write a migration/upgrade guide for: {description}. Acceptance: {acceptance}. Cover breaking changes, required steps, and rollback.',
+    },
+    {
+      id: 'docs-deep', name: 'Deep technical documentation', complexity: 5,
+      harness: 'llm',
+      tpl: 'Write deep technical documentation for: {description}. Acceptance: {acceptance}. Include architecture diagrams (text/ASCII), design rationale, data flows, and operational runbooks.',
+    },
+  ],
+
   test: [
     {
       id: 'test-smoke', name: 'Smoke check', complexity: 1,
@@ -123,13 +151,45 @@ Follow conventional commit style, keep changes structured into logical commits, 
       tpl: 'Add/run end-to-end tests and property-based checks for: {description}. Acceptance: {acceptance}. Cover full user paths and invariants.',
     },
   ],
+
+  review: [
+    {
+      id: 'review-read', name: 'Read-through', complexity: 1,
+      harness: 'llm',
+      tpl: 'Read the changes made for: {description}. Acceptance: {acceptance}. Summarise what changed and flag anything obviously wrong or missing. Keep it light.',
+    },
+    {
+      id: 'review-code', name: 'Code review (best practices)', complexity: 2,
+      harness: 'llm',
+      tpl: 'Code-review the changes for: {description} against conventional best practices: correctness, clarity, naming, dead code, error handling, and diff size. Acceptance: {acceptance}. List concrete findings with file/line hints and a verdict.',
+    },
+    {
+      id: 'review-security', name: 'Security review (OWASP)', complexity: 3,
+      harness: 'llm',
+      tpl: `Security-review the changes for: {description} against OWASP Top 10 / ASVS:
+Injection, authentication/authorization, sensitive data exposure, business logic, SSRF, and dependency risk.
+Acceptance: {acceptance}. Rate each finding by severity and give a go/no-go.`,
+    },
+    {
+      id: 'review-performance', name: 'Performance review', complexity: 4,
+      harness: 'llm',
+      tpl: 'Performance-review the changes for: {description}. Look for O(N²)/hot paths, N+1 queries, unnecessary allocation, blocking I/O, and caching opportunities. Acceptance: {acceptance}. Quantify expected impact where possible.',
+    },
+    {
+      id: 'review-architecture', name: 'Architecture + compliance review', complexity: 5,
+      harness: 'llm',
+      tpl: `Architecture and compliance review for: {description}. Assess fit vs the repo's documented architecture/constitution, layering, coupling, extensibility, and any standards. Acceptance: {acceptance}. Produce a structured decision record noting trade-offs.`,
+    },
+  ],
 };
 
-// Human phase labels (used by the UI to group the method dropdown).
+// Phase → expected description in each step's prompt (used by the UI grouping).
 export const PHASE_LABELS = {
   plan: 'Plan',
   code: 'Code',
   test: 'Test / Verify',
+  review: 'Review',
+  docs: 'Docs',
 };
 
 // Where the service looks for custom actions, relative to the repo root the
@@ -142,7 +202,7 @@ export function customActionsDir(repoRoot) {
 // Scan for custom actions defined in the repo the service runs in.
 // Returns a flat catalog keyed by phase: { plan: [{id,name,command,phase}], ... }.
 export function listCustomActions({ repoRoot } = {}) {
-  const out = { plan: [], code: [], test: [] };
+  const out = Object.fromEntries(Object.keys(METHODS).map((p) => [p, []]));
   if (!repoRoot) return out;
   const base = customActionsDir(resolveRoot(repoRoot));
   if (!existsSync(base)) return out;
