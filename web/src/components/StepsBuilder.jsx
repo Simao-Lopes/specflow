@@ -287,7 +287,7 @@ function VerifierList({ verifiers, onChange, models, methods }) {
 }
 
 // One editable step card.
-function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods, pipelineId, onNotify }) {
+function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods, pipelineId, onNotify, resolvedPrompt }) {
   const set = (patch) => onPatch(index, patch);
   const onApplyRestore = (text) => set({ prompt: text });
 
@@ -348,7 +348,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
       <Field label="Prompt">
         <textarea className="input mono" rows={2} value={step.prompt} onChange={(e) => set({ prompt: e.target.value })} placeholder="Optional step instructions for the agent" />
       </Field>
-      <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} method={step.method} notify={onNotify} onApplyRestore={onApplyRestore} />
+      <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} method={step.method} resolvedPrompt={resolvedPrompt} notify={onNotify} onApplyRestore={onApplyRestore} />
 
       <VerifierList
         verifiers={step.verify || []}
@@ -360,7 +360,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
   );
 }
 
-export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models, methods, pipelineId, onNotify }) {
+export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabel = 'Save steps', models, methods, pipelineId, onNotify, resolvedPrompts }) {
   const list = Array.isArray(steps) ? steps : defaultSteps();
 
   const patch = (i, patchObj) => {
@@ -398,6 +398,7 @@ export default function StepsBuilder({ steps, onChange, onSave, saving, saveLabe
             methods={methods}
             pipelineId={pipelineId}
             onNotify={onNotify}
+            resolvedPrompt={resolvedPrompts ? resolvedPrompts[String(s.id)] : undefined}
           />
         ))}
       </div>

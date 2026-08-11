@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import api from '../api.js';
 
@@ -75,12 +75,18 @@ export default function PromptEditor({ pipelineId, stepId, prompt, resolvedPromp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, pipelineId, stepId, method]);
 
-  // Keep the editor text in sync with the effective prompt (e.g. when a
-  // restore happens, or an external edit changes the prompt).
+  // Initialize the editor text when it's first opened with the effective prompt.
+  // (Not continuously synced, so the user's typing isn't clobbered.)
+  const openRef = useRef(false);
   useEffect(() => {
-    setText(effectivePrompt);
+    if (open && !openRef.current) {
+      openRef.current = true;
+      setText(effectivePrompt);
+    } else if (!open) {
+      openRef.current = false;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectivePrompt]);
+  }, [open]);
 
   const loadVersions = useCallback(async () => {
     if (!enabled) return;

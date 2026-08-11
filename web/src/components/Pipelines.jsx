@@ -17,6 +17,9 @@ export default function Pipelines({
   const [steps, setSteps] = useState(() => defaultSteps());
   const [form, setForm] = useState({ name: '', description: '' });
   const [saving, setSaving] = useState(false);
+  // Resolved prompts per step id (method templates filled), loaded once for the
+  // pipeline being edited so the PromptEditor shows the real prompt reliably.
+  const [resolvedPrompts, setResolvedPrompts] = useState({});
 
   // Method library (industry templates + custom actions), fetched once on mount.
   const [methods, setMethods] = useState(undefined);
@@ -39,11 +42,25 @@ export default function Pipelines({
   useEffect(() => {
     if (!editor) return;
     if (editor.mode === 'edit' && editor.pipeline) {
+      const pid = editor.pipeline.id;
       setSteps(Array.isArray(editor.pipeline.steps) && editor.pipeline.steps.length ? editor.pipeline.steps : defaultSteps());
       setForm({ name: editor.pipeline.name || '', description: editor.pipeline.description || '' });
+      // Preload resolved prompts so each step's editor shows the real (filled)
+      // method prompt instead of a blank box.
+      setResolvedPrompts({});
+      api.pipelinePrompts(pid)
+        .then((r) => {
+          if (r && Array.isArray(r.steps)) {
+            const map = {};
+            r.steps.forEach((s) => { if (s && s.id != null) map[String(s.id)] = s.prompt || ''; });
+            setResolvedPrompts(map);
+          }
+        })
+        .catch(() => {});
     } else {
       setSteps(defaultSteps());
       setForm({ name: '', description: '' });
+      setResolvedPrompts({});
     }
   }, [editor]);
 
@@ -105,7 +122,7 @@ export default function Pipelines({
             <textarea className="input" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="What does this pipeline do?" />
           </label>
 
-          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} methods={{ templates: methods?.templates || {}, custom: methods?.custom || {}, phases: methods?.phases || {} }} pipelineId={isEdit ? editor.pipeline?.id : null} onNotify={onNotify} />
+          <StepsBuilder steps={steps} onChange={setSteps} saveLabel={isEdit ? 'Save pipeline' : 'Create pipeline'} onSave={() => save({ preventDefault: () => {} })} saving={saving} models={models} methods={{ templates: methods?.templates || {}, custom: methods?.custom || {}, phases: methods?.phases || {} }} pipelineId={isEdit ? editor.pipeline?.id : null} onNotify={onNotify} resolvedPrompts={resolvedPrompts} />
 
           <div className="form-actions">
             <button type="button" className="btn ghost" onClick={cancel}>Cancel</button>
