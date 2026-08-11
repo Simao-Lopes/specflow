@@ -27,7 +27,9 @@ grep -q '^SPECFLOW_PORT=' .env && sed -i "s|^SPECFLOW_PORT=.*|SPECFLOW_PORT=${PO
 
 # 3. Install systemd unit
 UNIT="deploy/specflow.service"
-sed -e "s|/home/ubuntu/specflow|${ROOT}|g" "$UNIT" > "/tmp/${USER}-specflow.service"
+sed -e "s|/home/ubuntu/specflow|${ROOT}|g" \
+    -e "s|/home/ubuntu/.hermes/node/bin/node|$(command -v node)|g" \
+    "$UNIT" > "/tmp/${USER}-specflow.service"
 sudo cp "/tmp/${USER}-specflow.service" "/etc/systemd/system/specflow.service"
 sudo systemctl daemon-reload
 sudo systemctl enable specflow

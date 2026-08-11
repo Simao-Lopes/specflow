@@ -9,7 +9,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/specflow
 EnvironmentFile=/home/ubuntu/specflow/.env
-ExecStart=/usr/bin/node src/api/server-entry.js
+ExecStart=/home/ubuntu/.hermes/node/bin/node src/api/server-entry.js
 Restart=on-failure
 RestartSec=5
 # Keep it isolated from the Hermes gateway service; does not touch it.
