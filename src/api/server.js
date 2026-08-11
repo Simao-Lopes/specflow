@@ -12,7 +12,7 @@ import {
   listJobs, getJob, jobLogs, jobSteps, runJob, gateJob,
   listMessages, addMessage, stepsOf,
   listPipelines, getPipeline, createPipeline, updatePipeline, deletePipeline,
-  instantiatePresets, listPresets,
+  instantiatePresets, listPresets, syncPipelinesFromDisk, materializeAllPrompts,
 } from '../core/core.js';
 import { on, EVT } from '../core/events.js';
 import { initStore, getDb } from '../core/store.js';
@@ -30,6 +30,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function buildServer({ dbPath, port }) {
   initStore(dbPath);
+  // Seed industry preset pipelines (idempotent) + load any pipelines edited
+  // directly on disk (folders under <repoRoot>/.specflow/pipelines/).
+  try { instantiatePresets(); } catch (e) { console.error('preset seed:', e.message); }
+  try { const a = materializeAllPrompts(); if (a) console.log(`[pipelines] materialized prompts on ${a}`); } catch (e) { console.error('materialize:', e.message); }
+  try { const n = syncPipelinesFromDisk(); console.log(`[pipelines] loaded ${n} from disk store`); } catch (e) { console.error('disk sync:', e.message); }
   initWhatsAppChannel();
   startNotificationBridge();
 

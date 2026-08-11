@@ -308,14 +308,29 @@ export function templateCatalog() {
   return out;
 }
 
-// Resolve a pipeline step's EFFECTIVE prompt for display/editing. For a
-// method-driven step this is the filled template prompt (what the agent would
-// receive). For a fully custom step it is step.prompt. `spec` is optional
-// context (a spec using the pipeline) used to fill {description}/{acceptance}.
+// Resolve a pipeline step's EFFECTIVE prompt for display/editing/exeuction.
+// If the step has a stored prompt (step.prompt) it WINS — that is the verified,
+// user-controlled prompt actually sent to the agent. Otherwise, for a method
+// step, fall back to the filled method template. For a fully custom step with
+// no prompt, return ''.
 export function resolvedStepPrompt(step, { spec } = {}) {
+  if (step?.prompt != null && String(step.prompt).trim() !== '') return String(step.prompt);
   const resolved = resolveMethod({ ...step, _spec: spec || { title: step?.name || step?.id || 'the feature' } }, {});
-  if (resolved && resolved.prompt != null) return resolved.prompt;
-  return step?.prompt || '';
+  return resolved && resolved.prompt != null ? resolved.prompt : '';
+}
+
+// Materialize the effective prompt onto each step (and its verify sub-agents)
+// so it is STORED and VISIBLE, not implied by a method. Returns a new steps
+// array where every step.prompt is set to its effective prompt.
+export function materializePrompts(steps, { spec } = {}) {
+  return (Array.isArray(steps) ? steps : []).map((s) => {
+    const out = { ...s };
+    out.prompt = resolvedStepPrompt(s, { spec });
+    if (Array.isArray(s.verify) && s.verify.length) {
+      out.verify = s.verify.map((v) => ({ ...v, prompt: resolvedStepPrompt(v, { spec }) }));
+    }
+    return out;
+  });
 }
 
 function fillTemplate(tpl, step) {

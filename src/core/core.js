@@ -13,6 +13,8 @@ import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
 import { resolveMethod } from '../methods/catalog.js';
 import { PIPELINE_PRESETS } from './presets.js';
 import { jobDefaults, autoVersionPipeline } from './settings.js';
+import { writePipelineToDisk, deletePipelineFromDisk, listPipelineFolders } from './pipelinestore.js';
+import { materializePrompts } from '../methods/catalog.js';
 
 let runner;
 
@@ -88,15 +90,23 @@ function safeParseSteps(steps) {
     return Array.isArray(s) ? s : defaultSteps();
   } catch { return defaultSteps(); }
 }
+function repoRootPath() {
+  return resolve(getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value || './work');
+}
+
 export function createPipeline(input) {
   const id = input.id || randomUUID().slice(0, 8);
+  // Materialize prompts so they are STORED + visible (not implied by a method).
+  const steps = materializePrompts(input.steps);
   getDb().prepare('INSERT INTO pipelines (id,name,description,steps) VALUES (@id,@name,@description,@steps)')
     .run({
       id, name: input.name || 'Untitled pipeline',
       description: input.description || '',
-      steps: JSON.stringify(Array.isArray(input.steps) ? input.steps : defaultSteps()),
+      steps: JSON.stringify(Array.isArray(steps) ? steps : defaultSteps()),
     });
-  const row = getDb().prepare('SELECT * FROM pipelines WHERE id=?').get(id);
+  const row = getPipeline(id);
+  // Write the durable pipeline folder (struct + prompts/*.md) to disk.
+  writePipelineToDisk({ ...row, steps: row.steps }, { repoRoot: repoRootPath() });
   autoVersionPipeline({ id, steps: row ? row.steps : [] });
   emit(EVT.PIPELINE_UPDATED, row);
   return row;
@@ -109,11 +119,13 @@ export function updatePipeline(id, patch) {
   for (const f of fields) {
     if (patch[f] !== undefined) {
       sets.push(`${f}=@${f}`);
-      vals[f] = typeof patch[f] === 'object' ? JSON.stringify(patch[f]) : patch[f];
+      // Materialize prompts on save so they are stored + visible.
+      vals[f] = typeof patch[f] === 'object' ? JSON.stringify(f === 'steps' ? materializePrompts(patch[f]) : patch[f]) : patch[f];
     }
   }
   if (sets.length) { vals.id = id; getDb().prepare(`UPDATE pipelines SET ${sets.join(',')}, updated_at=datetime('now') WHERE id=@id`).run(vals); }
   const row = getPipeline(id);
+  writePipelineToDisk({ ...row, steps: row.steps }, { repoRoot: repoRootPath() });
   autoVersionPipeline({ id, steps: row ? row.steps : [] });
   emit(EVT.PIPELINE_UPDATED, row);
   return row;
@@ -122,6 +134,7 @@ export function deletePipeline(id) {
   // Re-point specs using it to the default pipeline.
   getDb().prepare('UPDATE specs SET pipeline_id=? WHERE pipeline_id=?').run('default', id);
   getDb().prepare('DELETE FROM pipelines WHERE id=?').run(id);
+  deletePipelineFromDisk(id, { repoRoot: repoRootPath() });
   emit(EVT.PIPELINE_UPDATED, { id, deleted: true });
   emit(EVT.SPEC_UPDATED, { id: '_', refetch: true });
 }
@@ -141,6 +154,43 @@ export function instantiatePresets({ only } = {}) {
 }
 export function listPresets() {
   return PIPELINE_PRESETS;
+}
+
+// Load pipelines from the disk store (folders under <repoRoot>/.specflow/pipelines/)
+// and upsert them into SQLite, so edits made directly to the folder/*.md files
+// are honoured. Called on server start. Returns the number of pipelines loaded.
+export function syncPipelinesFromDisk() {
+  const root = repoRootPath();
+  const dirs = listPipelineFolders({ repoRoot: root });
+  let loaded = 0;
+  for (const p of dirs) {
+    // Only upsert if the id is present; skip seedlings without an id.
+    if (!p.id) continue;
+    const exists = getDb().prepare('SELECT id FROM pipelines WHERE id=?').get(p.id);
+    if (exists) {
+      updatePipeline(p.id, { name: p.name, description: p.description, steps: p.steps });
+    } else {
+      createPipeline({ id: p.id, name: p.name, description: p.description, steps: p.steps });
+    }
+    loaded++;
+  }
+  return loaded;
+}
+
+// Make sure every pipeline's step prompts are MATERIALIZED (stored + visible),
+// even ones created before this feature existed. Idempotent: fills empty
+// step.prompt with the effective prompt and writes them to disk.
+export function materializeAllPrompts() {
+  const all = listPipelines();
+  let updated = 0;
+  for (const p of all) {
+    const steps = Array.isArray(p.steps) ? p.steps : [];
+    const needs = steps.some((s) => !(s && s.prompt && String(s.prompt).trim()));
+    if (!needs) continue;
+    updatePipeline(p.id, { steps });
+    updated++;
+  }
+  return updated;
 }
 
 // Resolve a spec's effective steps: from its pipeline, falling back to its own
@@ -419,7 +469,9 @@ async function executeStep(job, spec, step, { checkout }) {
   // Resolve an industry-method or custom-action into execution config when the
   // step declares a `method`. Otherwise the step is fully custom as configured.
   const method = resolveMethod(step, { repoRoot: jobRepoRoot() });
-  const runStep = method ? { ...step, ...pick(method, ['harness', 'command', 'prompt', 'provider', 'model']) } : step;
+  const runStep = method
+  ? { ...step, ...pick(method, ['harness', 'command', 'provider', 'model']), prompt: step.prompt || method.prompt || '' }
+  : step;
 
   addLog(jobIdT(job), `— Step: ${step.name}${method ? ` [method: ${method.name}]` : (step.harness ? ` (harness ${step.harness})` : '')}`);
   setStep(jobIdT(job), step, { status: 'running', attempt: 1 });
@@ -463,7 +515,7 @@ async function executeStep(job, spec, step, { checkout }) {
       for (const v of step.verify) {
         // Verify sub-agents may also declare a method (template or custom action).
         const vMethod = resolveMethod(v, { repoRoot: jobRepoRoot() });
-        const runV = vMethod ? { ...v, ...pick(vMethod, ['harness', 'command', 'prompt']) } : v;
+        const runV = vMethod ? { ...v, ...pick(vMethod, ['harness', 'command', 'provider', 'model']), prompt: v.prompt || vMethod.prompt || '' } : v;
         // Gracefully skip verifiers that were added but not yet configured
         // (e.g. a custom verifier with an empty command and no method — a method
         // would supply the harness/command). Don't hard-fail.
