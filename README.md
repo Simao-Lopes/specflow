@@ -94,6 +94,24 @@ flowchart LR
 
 ---
 
+## Claude-Code-only setup (simplest)
+
+If you already use **Claude Code**, that's all you need — no OpenRouter/Gemini/NVIDIA keys. Claude brings its own auth.
+
+```bash
+# Prereqs: node + claude (Claude Code CLI) installed
+bash scripts/setup-claude.sh myorg/myapp
+npm start                 # → http://localhost:9120/ui/
+```
+
+The script installs deps, writes a Claude-only `.env`, sets the default harness to `claude`, and seeds the **"Claude Code (all steps)"** pipeline (specify → plan → implement → test → review, all via Claude Code).
+
+Then in the UI: **New Spec** → repo → pipeline **"Claude Code (all steps)"** → **Run**.
+
+> Any pipeline can be Claude-first too: set a step's **Harness** to `claude` (it overrides the method's default), or change the default in **Config → Preferences → Default harness**.
+
+---
+
 ## Connecting tools (MCP)
 
 MCP (Model Context Protocol) lets pipeline agents call real tools. Add a server under **Config → MCP Connections**; every configured MCP is exposed to every node.

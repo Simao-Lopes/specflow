@@ -499,8 +499,10 @@ async function executeStep(job, spec, step, { checkout }) {
   // Resolve an industry-method or custom-action into execution config when the
   // step declares a `method`. Otherwise the step is fully custom as configured.
   const method = resolveMethod(step, { repoRoot: jobRepoRoot() });
+  // Resolve the step. A step's explicit `harness` overrides the method's default,
+  // so e.g. a Claude-first pipeline can run method prompts via Claude Code.
   const runStep = method
-  ? { ...step, ...pick(method, ['harness', 'command', 'provider', 'model']), prompt: step.prompt || method.prompt || '' }
+  ? { ...step, ...pick(method, ['command', 'provider', 'model']), harness: step.harness || method.harness, prompt: step.prompt || method.prompt || '' }
   : step;
 
   // Append configured MCP tools (all nodes can use all MCPs) to the prompt so

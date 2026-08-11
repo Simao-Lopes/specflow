@@ -78,4 +78,15 @@ export const PIPELINE_PRESETS = [
       st('Smoke Test', 'test-smoke', { harness: 'custom', command: 'npm start --check && curl -sf localhost:3000/health || exit 1', on_failure: 'stop' }),
     ],
   },
+  {
+    name: 'Claude Code (all steps)',
+    description: 'Run every step (specify → plan → implement → test → review) through Claude Code CLI. No API keys — Claude brings its own auth. Simplest setup for Claude-only users.',
+    steps: [
+      st('Specify', 'plan-spec', { harness: 'claude' }),
+      st('Plan', 'plan-technical', { harness: 'claude' }),
+      st('Implement', 'code-spec-first', { harness: 'claude', iterations: 3, on_failure: 'stop' }),
+      st('Test', 'test-smoke', { harness: 'claude', on_failure: 'stop' }),
+      st('Review', 'review-code', { harness: 'claude' }),
+    ],
+  },
 ];
