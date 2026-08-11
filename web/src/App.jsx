@@ -21,6 +21,8 @@ export default function App() {
   const [agents, setAgents] = useState([]);
   const [config, setConfig] = useState(null);
   const [jobs, setJobs] = useState([]);
+  const [stepEvents, setStepEvents] = useState([]);
+  const [msgEvents, setMsgEvents] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [toasts, setToasts] = useState([]);
   const socketRef = useRef(null);
@@ -95,6 +97,25 @@ export default function App() {
       );
     });
 
+    // Live step-status updates for the pipeline (payload: {job_id, step_id, name, attempt, status, detail}).
+    socket.on('step', (s) => {
+      if (!s) return;
+      setStepEvents((prev) => {
+        const next = [s, ...prev];
+        return next.length > 200 ? next.slice(0, 200) : next;
+      });
+    });
+
+    // Live agent-session message (payload: a saved message object).
+    socket.on('message', (m) => {
+      if (!m) return;
+      setMsgEvents((prev) => {
+        if (prev.some((x) => x.id !== undefined && String(x.id) === String(m.id))) return prev;
+        const next = [m, ...prev];
+        return next.length > 200 ? next.slice(0, 200) : next;
+      });
+    });
+
     socket.on('notify', (n) => notify(n?.message || 'Notification', n?.level || 'info'));
 
     return () => socket.close();
@@ -143,6 +164,8 @@ export default function App() {
             onBack={goBoard}
             jobEvent={jobs.filter((j) => String(j.spec_id) === String(selectedSpecId))}
             onRefreshJob={() => refreshJobs(selectedSpecId)}
+            stepEvent={stepEvents}
+            messageEvent={msgEvents}
           />
         )}
         {view === 'detail' && !selectedSpecId && goBoard()}

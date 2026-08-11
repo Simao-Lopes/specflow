@@ -18,11 +18,14 @@
 ## Features
 
 - **Spec-driven workflow** — features go through `backlog → in_progress → review → done`.
-- **Pluggable agent harnesses** — `hermes`, `claude`, `custom` (own script/command), or direct `llm`.
-- **Pluggable LLM providers** — OpenRouter, NVIDIA NIM, Google Gemini, or any OpenAI-compatible API.
+- **Editable steps pipeline** — each spec is implemented as a chain of steps (default `Plan → Code`). Reorder, add, edit, or delete steps in the UI; each step picks its own harness + LLM provider.
+- **Sub-agent verify flow (iterate)** — a step can define *verify sub-agents* (e.g. `Code → Test`). If a verifier fails, the step re-runs with the failure fed back, up to its iteration budget — "code, then test, if test fails iterate".
+- **Interact with the agent** — every spec has an Agent Session chat. Messages persist and are injected into agent prompts as live guidance.
+- **Pluggable agent harnesses** — per-step: `hermes`, `claude`, `custom` (own script/command), or `llm`.
+- **Pluggable LLM providers** — OpenRouter, NVIDIA NIM, Google Gemini, Ollama, LiteLLM.
 - **Git integration** — auto branch-per-spec, commit, and **open a PR (never auto-merges)**.
-- **Configurable communication** — choose where the flow reports: web UI, REST, CLI, and optional WhatsApp webhook.
-- **Web UI** — feature board, spec editor, agent config, live job logs (Socket.IO).
+- **Configurable communication** — choose where the flow reports: web UI, REST, CLI, or optional WhatsApp webhook.
+- **Web UI** — feature board, spec detail with steps builder + chat, agents, config, live job logs (Socket.IO).
 
 ## Quickstart
 

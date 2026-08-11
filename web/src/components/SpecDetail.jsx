@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api.js';
 import { TYPES, statusClass, fmtTs } from './SpecBoard.jsx';
+import StepsBuilder, { defaultSteps } from './StepsBuilder.jsx';
+import AgentChat from './AgentChat.jsx';
 
 const HARNESSES = ['custom', 'hermes', 'claude', 'llm', 'plain'];
 const PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
 
-export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent, onRefreshJob }) {
+export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent, onRefreshJob, stepEvent, messageEvent }) {
   const [spec, setSpec] = useState(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -16,8 +18,12 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
   const [selectedJob, setSelectedJob] = useState(null);
   const [logs, setLogs] = useState([]); // {id} entries for selectedJob
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [steps, setSteps] = useState(null);
+  const [savingSteps, setSavingSteps] = useState(false);
+  const [messages, setMessages] = useState([]);
   const logRef = useRef(null);
   const seenLogIds = useRef(new Set());
+  const seenMsgIds = useRef(new Set());
 
   // Load spec detail.
   useEffect(() => {
@@ -26,9 +32,37 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
       .catch((e) => onNotify(e.message, 'error'));
     api.listJobs(specId).then((list) => { if (alive) setJobs(list); })
       .catch((e) => onNotify(e.message, 'error'));
+    // Lazy-load steps pipeline (default when none exist) and agent-session messages.
+    api.getSteps(specId)
+      .then((s) => { if (alive) setSteps(Array.isArray(s) && s.length ? s : defaultSteps()); })
+      .catch(() => { if (alive) setSteps(defaultSteps()); });
+    api.listMessages(specId)
+      .then((m) => {
+        if (!alive) return;
+        (m || []).forEach((x) => seenMsgIds.current.add(String(x.id)));
+        setMessages(m || []);
+      })
+      .catch((e) => onNotify(e.message, 'error'));
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specId]);
+
+  // Append live agent-session messages pushed over the socket (filtered to this spec).
+  useEffect(() => {
+    if (!Array.isArray(messageEvent)) return;
+    const mine = messageEvent.filter((m) => m && String(m.spec_id) === String(specId));
+    if (!mine.length) return;
+    setMessages((prev) => {
+      const next = [...prev];
+      mine.forEach((m) => {
+        if (!m || m.id === undefined) return;
+        if (seenMsgIds.current.has(String(m.id))) return;
+        seenMsgIds.current.add(String(m.id));
+        if (!next.some((x) => String(x.id) === String(m.id))) next.push(m);
+      });
+      return next;
+    });
+  }, [messageEvent, specId]);
 
   // Sync with prop job events (arrive via socket through App).
   useEffect(() => {
@@ -119,6 +153,39 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
   };
 
   const setRunFormWrap = (k) => (e) => setRunForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const saveSteps = async () => {
+    if (!spec) return;
+    setSavingSteps(true);
+    try {
+      const saved = await api.saveSteps(specId, steps);
+      setSteps(Array.isArray(saved) && saved.length ? saved : steps);
+      onNotify('Steps saved', 'success');
+    } catch (err) { onNotify(err.message, 'error'); }
+    finally { setSavingSteps(false); }
+  };
+
+  const sendMessage = async (content) => {
+    const saved = await api.sendMessage(specId, content);
+    if (saved && saved.id) {
+      seenMsgIds.current.add(String(saved.id));
+      setMessages((prev) => (prev.some((x) => String(x.id) === String(saved.id)) ? prev : [...prev, saved]));
+    }
+    return saved;
+  };
+
+  // Live pipeline status from socket 'step' events, limited to jobs belonging to this spec.
+  const liveStepEvents = Array.isArray(stepEvent)
+    ? stepEvent.filter((s) => {
+        if (!s) return false;
+        return jobs.some((j) => String(j.id) === String(s.job_id));
+      })
+    : [];
+  // Latest event per configured step id, preserving pipeline order.
+  const liveByStep = {};
+  liveStepEvents.forEach((s) => {
+    if (s && s.step_id && !liveByStep[s.step_id]) liveByStep[s.step_id] = s;
+  });
 
   if (!spec) return <section className="view"><div className="empty"><p>Loading spec…</p></div></section>;
 
@@ -236,6 +303,28 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
         ))}
       </div>
 
+      <h3 className="section-title">Live Pipeline</h3>
+      <div className="card pipeline-card">
+        {liveStepEvents.length === 0 ? (
+          <p className="muted">No live step activity. Start a run to stream pipeline steps here.</p>
+        ) : (
+          <>
+            <p className="muted small">Streaming step status from the active run(s):</p>
+            <div className="pipeline-list">
+              {liveStepEvents.slice(0, 30).map((s, i) => (
+                <div className="pipe-row" key={i}>
+                  <span className={`badge ${statusClass(s.status)}`}>{s.status}</span>
+                  <span className="pipe-name">{s.name || s.step_id}</span>
+                  {s.attempt != null && <span className="mono small muted">attempt {s.attempt}</span>}
+                  <span className="mono chip small">job {String(s.job_id).slice(0, 8)}</span>
+                  {s.detail && <span className="pipe-detail mono small">{s.detail}</span>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       <h3 className="section-title">Live Log</h3>
       <div className="card console-card">
         {!selectedJob ? (
@@ -255,6 +344,17 @@ export default function SpecDetail({ specId, config, onNotify, onBack, jobEvent,
             </div>
           </>
         )}
+      </div>
+
+      <h3 className="section-title">Steps</h3>
+      <StepsBuilder steps={steps} onChange={setSteps} onSave={saveSteps} saving={savingSteps} />
+
+      <h3 className="section-title">Agent Session</h3>
+      <div className="card chat-card">
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Chat with the agent working on this spec. Messages are persisted and injected into agent prompts as guidance.
+        </p>
+        <AgentChat messages={messages} onSend={sendMessage} />
       </div>
     </section>
   );

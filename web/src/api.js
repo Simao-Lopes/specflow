@@ -40,6 +40,14 @@ export const api = {
   listJobs: (specId) => request(`/api/jobs?specId=${encodeURIComponent(specId || '')}`),
   jobLogs: (jobId, limit = 500) => request(`/api/jobs/${jobId}/logs?limit=${limit}`),
 
+  // Steps pipeline (GET returns array, PUT sends the raw steps array as body)
+  getSteps: (id) => request(`/api/specs/${id}/steps`),
+  saveSteps: (id, steps) => request(`/api/specs/${id}/steps`, { method: 'PUT', body: steps }),
+
+  // Per-spec agent-session messages
+  listMessages: (id) => request(`/api/specs/${id}/messages`),
+  sendMessage: (id, content, role = 'user') => request(`/api/specs/${id}/messages`, { method: 'POST', body: { content, role } }),
+
   getConfig: () => request('/api/config'),
   setChannel: (name, enabled) => request(`/api/channels/${encodeURIComponent(name)}`, { method: 'POST', body: { enabled } }),
 };
