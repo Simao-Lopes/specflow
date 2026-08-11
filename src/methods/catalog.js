@@ -308,6 +308,16 @@ export function templateCatalog() {
   return out;
 }
 
+// Resolve a pipeline step's EFFECTIVE prompt for display/editing. For a
+// method-driven step this is the filled template prompt (what the agent would
+// receive). For a fully custom step it is step.prompt. `spec` is optional
+// context (a spec using the pipeline) used to fill {description}/{acceptance}.
+export function resolvedStepPrompt(step, { spec } = {}) {
+  const resolved = resolveMethod({ ...step, _spec: spec || { title: step?.name || step?.id || 'the feature' } }, {});
+  if (resolved && resolved.prompt != null) return resolved.prompt;
+  return step?.prompt || '';
+}
+
 function fillTemplate(tpl, step) {
   const spec = step?._spec || {};
   return tpl

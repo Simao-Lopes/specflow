@@ -39,7 +39,7 @@ function versionContent(version) {
   return contentToMd(version && version.content);
 }
 
-export default function PromptEditor({ pipelineId, stepId, prompt, onApplyRestore, notify }) {
+export default function PromptEditor({ pipelineId, stepId, prompt, resolvedPrompt, method, onApplyRestore, notify }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [note, setNote] = useState('');
@@ -49,15 +49,38 @@ export default function PromptEditor({ pipelineId, stepId, prompt, onApplyRestor
   const [busyVersion, setBusyVersion] = useState(null);
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [fetchedResolved, setFetchedResolved] = useState(null);
 
   const enabled = Boolean(pipelineId && stepId);
 
-  // Keep the editor text in sync with the step's current prompt (e.g. when a
-  // restore happens, or an external edit changes the prompt). Only resync when
-  // we are NOT currently focused on typing.
+  // The effective prompt to show: the explicit step override if present, else
+  // the method's resolved template prompt (what the agent would actually get).
+  const effectivePrompt = (() => {
+    const sp = (prompt || '').trim();
+    if (sp) return sp;
+    if (fetchedResolved != null) return fetchedResolved;
+    if (resolvedPrompt != null && resolvedPrompt.trim()) return resolvedPrompt;
+    return '';
+  })();
+
+  // Fetch the server-resolved prompt for method steps (so a template step shows
+  // its real filled prompt, not a blank box).
   useEffect(() => {
-    setText(contentToMd(prompt));
-  }, [prompt]);
+    if (!enabled || !method) { setFetchedResolved(null); return; }
+    let alive = true;
+    api.stepPrompt(pipelineId, stepId)
+      .then((r) => { if (alive && r && r.prompt != null) setFetchedResolved(r.prompt); })
+      .catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, pipelineId, stepId, method]);
+
+  // Keep the editor text in sync with the effective prompt (e.g. when a
+  // restore happens, or an external edit changes the prompt).
+  useEffect(() => {
+    setText(effectivePrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectivePrompt]);
 
   const loadVersions = useCallback(async () => {
     if (!enabled) return;
@@ -107,7 +130,9 @@ export default function PromptEditor({ pipelineId, stepId, prompt, onApplyRestor
       const list = await api.savePromptVersion(pipelineId, stepId, { content: text, ...(note ? { note } : {}) });
       setVersions(Array.isArray(list) ? list : []);
       setNote('');
-      notify('Prompt version saved', 'success');
+      // Apply the edited prompt to the step so it actually takes effect.
+      if (onApplyRestore) onApplyRestore(text);
+      notify('Prompt version saved & applied', 'success');
     } catch (e) {
       setError(e.message);
     } finally {

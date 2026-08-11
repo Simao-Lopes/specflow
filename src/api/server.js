@@ -19,7 +19,7 @@ import { initStore, getDb } from '../core/store.js';
 import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, getPrimaryChannel, startNotificationBridge } from '../channels/router.js';
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
 import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
-import { templateCatalog, listCustomActions, PHASE_LABELS } from '../methods/catalog.js';
+import { templateCatalog, listCustomActions, PHASE_LABELS, resolvedStepPrompt } from '../methods/catalog.js';
 import {
   getSettings, updateSettings, jobDefaults,
   listConnections, addConnection, updateConnection, deleteConnection, testConnection,
@@ -84,6 +84,27 @@ export function buildServer({ dbPath, port }) {
     const s = getSpec(req.params.id);
     if (!s) return { error: 'not found' };
     return stepsOf(s);
+  });
+
+  // Effective prompts for every step of a pipeline (method templates filled) —
+  // so the UI can show the real prompt each step sends, not just blank step.prompt.
+  app.get('/api/pipelines/:id/prompts', (req) => {
+    const p = getPipeline(req.params.id);
+    if (!p) return { error: 'not found' };
+    const steps = Array.isArray(p.steps) ? p.steps : [];
+    const resolved = steps.map((s) => ({
+      id: s.id, name: s.name, method: s.method || null,
+      prompt: resolvedStepPrompt(s),
+      stepPrompt: s.prompt || '',
+    }));
+    return { pipelineId: p.id, steps: resolved };
+  });
+  app.get('/api/pipelines/:id/steps/:sid/prompt', (req) => {
+    const p = getPipeline(req.params.id);
+    if (!p) return { error: 'not found' };
+    const s = (Array.isArray(p.steps) ? p.steps : []).find((x) => String(x.id) === String(req.params.sid));
+    if (!s) return { error: 'step not found' };
+    return { id: s.id, name: s.name, method: s.method || null, prompt: resolvedStepPrompt(s), stepPrompt: s.prompt || '' };
   });
 
   // Per-spec agent-session messages (interact with the agent)

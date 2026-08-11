@@ -49,6 +49,10 @@ export const api = {
   createPipeline: (body) => request('/api/pipelines', { method: 'POST', body }),
   updatePipeline: (id, body) => request(`/api/pipelines/${id}`, { method: 'PATCH', body }),
   deletePipeline: (id) => request(`/api/pipelines/${id}`, { method: 'DELETE' }),
+  // Effective prompts per pipeline step (method templates filled) so the UI can
+  // show the real prompt each step sends, not just the (often blank) step.prompt.
+  pipelinePrompts: (pid) => request(`/api/pipelines/${encodeURIComponent(pid)}/prompts`),
+  stepPrompt: (pid, sid) => request(`/api/pipelines/${encodeURIComponent(pid)}/steps/${encodeURIComponent(sid)}/prompt`),
 
   // Spec pipeline steps: resolves the spec's pipeline into a read-only steps array.
   getSpecSteps: (id) => request(`/api/specs/${id}/steps`),

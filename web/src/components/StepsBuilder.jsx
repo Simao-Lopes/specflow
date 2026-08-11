@@ -348,7 +348,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
       <Field label="Prompt">
         <textarea className="input mono" rows={2} value={step.prompt} onChange={(e) => set({ prompt: e.target.value })} placeholder="Optional step instructions for the agent" />
       </Field>
-      <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} notify={onNotify} onApplyRestore={(text) => set({ prompt: text })} />
+      <PromptEditor pipelineId={pipelineId} stepId={step.id} prompt={step.prompt} method={step.method} notify={onNotify} onApplyRestore={onApplyRestore} />
 
       <VerifierList
         verifiers={step.verify || []}
