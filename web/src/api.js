@@ -82,6 +82,7 @@ export const api = {
   updateMcp: (id, body) => request(`/api/mcp/${id}`, { method: 'PATCH', body }),
   deleteMcp: (id) => request(`/api/mcp/${id}`, { method: 'DELETE' }),
   testMcp: (id) => request(`/api/mcp/${id}/test`, { method: 'POST' }),
+  listMcpPresets: () => request('/api/mcp/presets'),
 
   // Pipeline step prompt versioning.
   promptVersions: (pid, sid) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`),

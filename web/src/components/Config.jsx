@@ -198,6 +198,9 @@ export default function Config({ config, onNotify, onChanged }) {
   const [addingMcp, setAddingMcp] = useState(false);
   const [testingMcp, setTestingMcp] = useState({}); // id -> 'busy'|'ok'|'error'
   const [mcpTestResult, setMcpTestResult] = useState({}); // id -> {tools}|{error}
+  const [presets, setPresets] = useState([]);
+  const [selectedPreset, setSelectedPreset] = useState('');
+  const [presetEnv, setPresetEnv] = useState({}); // var -> value entered by user
 
   const refreshMcps = useCallback(async () => {
     setMcpLoading(true);
@@ -210,6 +213,36 @@ export default function Config({ config, onNotify, onChanged }) {
 
   useEffect(() => { refreshMcps(); }, [refreshMcps]);
 
+  // Load MCP preset templates.
+  useEffect(() => {
+    api.listMcpPresets()
+      .then((list) => { if (Array.isArray(list)) setPresets(list); })
+      .catch(() => {});
+  }, []);
+
+  // Fill the form from a chosen preset, showing any env (API key) fields.
+  const applyPreset = (presetId) => {
+    const p = presets.find((x) => x.id === presetId);
+    if (!p) return;
+    setSelectedPreset(presetId);
+    setNewMcp({
+      name: p.name,
+      transport: p.transport,
+      command: p.command || '',
+      url: p.url || '',
+      args: (p.args || []).join(' '),
+    });
+    const nextEnv = {};
+    (p.env || []).forEach((e) => { nextEnv[e.var] = ''; });
+    setPresetEnv(nextEnv);
+  };
+
+  const clearPreset = () => {
+    setSelectedPreset('');
+    setPresetEnv({});
+    setNewMcp({ name: '', transport: 'stdio', command: '', url: '', args: '' });
+  };
+
   const addMcp = async (e) => {
     e.preventDefault();
     if (!newMcp.name.trim()) { onNotify('MCP name is required', 'error'); return; }
@@ -218,15 +251,19 @@ export default function Config({ config, onNotify, onChanged }) {
     setAddingMcp(true);
     try {
       const args = newMcp.args.split(/[\s,]+/).filter(Boolean);
+      // Only send env values the user actually filled in (skip empty API keys).
+      const env = {};
+      for (const [k, v] of Object.entries(presetEnv)) { if (v && v.trim()) env[k] = v.trim(); }
       await api.addMcp({
         name: newMcp.name.trim(),
         transport: newMcp.transport,
         command: newMcp.transport === 'stdio' ? newMcp.command.trim() : '',
         url: newMcp.transport !== 'stdio' ? newMcp.url.trim() : '',
         args,
+        env,
       });
       onNotify('MCP connection added', 'success');
-      setNewMcp({ name: '', transport: 'stdio', command: '', url: '', args: '' });
+      clearPreset();
       setMcpFormOpen(false);
       await refreshMcps();
     } catch (err) { onNotify(err.message, 'error'); }
@@ -414,6 +451,41 @@ export default function Config({ config, onNotify, onChanged }) {
 
       {mcpFormOpen && (
         <form className="card form conn-form" onSubmit={addMcp}>
+          {presets.length > 0 && (
+            <Field label="Use a preset" hint="pick a template, paste any API key, add">
+              <div className="preset-row">
+                <select className="input" value={selectedPreset} onChange={(e) => (e.target.value ? applyPreset(e.target.value) : clearPreset())}>
+                  <option value="">— choose a preset —</option>
+                  {presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                {selectedPreset && (
+                  <p className="muted small preset-desc">{presets.find((p) => p.id === selectedPreset)?.description}</p>
+                )}
+              </div>
+            </Field>
+          )}
+
+          {Object.keys(presetEnv).length > 0 && (
+            <div className="preset-env">
+              {Object.entries(presetEnv).map(([k, v]) => {
+                const meta = (presets.find((p) => p.id === selectedPreset)?.env || []).find((e) => e.var === k);
+                return (
+                  <label className="field" key={k}>
+                    <span>{meta?.label || k} {meta?.optional ? '(optional)' : '*'}</span>
+                    <input
+                      type={meta?.kind === 'password' ? 'password' : 'text'}
+                      className="input mono"
+                      value={v}
+                      onChange={(e) => setPresetEnv((p) => ({ ...p, [k]: e.target.value }))}
+                      placeholder={k}
+                      autoComplete="off"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
           <div className="row">
             <Field label="Name *">
               <input className="input" value={newMcp.name} onChange={(e) => setNewMcp((n) => ({ ...n, name: e.target.value }))} placeholder="e.g. jira / slack / git" />
@@ -440,7 +512,7 @@ export default function Config({ config, onNotify, onChanged }) {
             </Field>
           )}
           <div className="form-actions">
-            <button type="button" className="btn ghost" onClick={() => setMcpFormOpen(false)}>Cancel</button>
+            <button type="button" className="btn ghost" onClick={() => { setMcpFormOpen(false); clearPreset(); }}>Cancel</button>
             <button type="submit" className="btn primary" disabled={addingMcp}>{addingMcp ? 'Adding…' : 'Add MCP'}</button>
           </div>
         </form>

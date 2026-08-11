@@ -17,16 +17,21 @@ import { spawn } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { MCP_PRESETS } from './mcpPresets.js';
+
+export function listMcpPresets() {
+  return MCP_PRESETS;
+}
 
 // ---- DB helpers ----
 
 export function listMcpConnections() {
-  return getDb().prepare('SELECT id,name,transport,command,url,args,enabled,created_at FROM mcp_connections ORDER BY name COLLATE NOCASE').all().map((r) => ({ ...r, args: safeParse(r.args) }));
+  return getDb().prepare('SELECT id,name,transport,command,url,args,env,enabled,created_at FROM mcp_connections ORDER BY name COLLATE NOCASE').all().map((r) => ({ ...r, args: safeParse(r.args), env: safeParseObj(r.env) }));
 }
 
 export function getMcpConnection(id) {
   const r = getDb().prepare('SELECT * FROM mcp_connections WHERE id=?').get(id);
-  return r ? { ...r, args: safeParse(r.args) } : null;
+  return r ? { ...r, args: safeParse(r.args), env: safeParseObj(r.env) } : null;
 }
 
 export function addMcpConnection(input) {
@@ -35,8 +40,8 @@ export function addMcpConnection(input) {
   const transport = input.transport || (input.url ? 'sse' : 'stdio');
   if (transport === 'stdio' && !input.command) throw new Error('command is required for stdio transport');
   if (transport !== 'stdio' && !input.url) throw new Error('url is required for remote transport');
-  getDb().prepare('INSERT INTO mcp_connections (id,name,transport,command,url,args,enabled) VALUES (?,?,?,?,?,?,?)')
-    .run(id, input.name, transport, input.command || '', input.url || '', JSON.stringify(Array.isArray(input.args) ? input.args : []), input.enabled !== false ? 1 : 0);
+  getDb().prepare('INSERT INTO mcp_connections (id,name,transport,command,url,args,env,enabled) VALUES (?,?,?,?,?,?,?,?)')
+    .run(id, input.name, transport, input.command || '', input.url || '', JSON.stringify(Array.isArray(input.args) ? input.args : []), JSON.stringify(input.env || {}), input.enabled !== false ? 1 : 0);
   const row = getMcpConnection(id);
   emit(EVT.CONFIG_UPDATED, { mcp: row });
   return row;
@@ -50,6 +55,7 @@ export function updateMcpConnection(id, patch) {
     if (patch[f] !== undefined) { sets.push(`${f}=@${f}`); vals[f] = patch[f]; }
   }
   if (patch.args !== undefined) { sets.push('args=@args'); vals.args = JSON.stringify(Array.isArray(patch.args) ? patch.args : []); }
+  if (patch.env !== undefined) { sets.push('env=@env'); vals.env = JSON.stringify(patch.env || {}); }
   if (sets.length) { vals.id = id; getDb().prepare(`UPDATE mcp_connections SET ${sets.join(',')} WHERE id=@id`).run(vals); }
   const row = getMcpConnection(id);
   emit(EVT.CONFIG_UPDATED, { mcp: row });
@@ -65,7 +71,7 @@ export function deleteMcpConnection(id) {
 
 function makeTransport(c) {
   if (c.transport === 'stdio') {
-    return new StdioClientTransport({ command: c.command, args: c.args || [], stderr: 'pipe' });
+    return new StdioClientTransport({ command: c.command, args: c.args || [], env: { ...process.env, ...(c.env || {}) }, stderr: 'pipe' });
   }
   const url = new URL(c.url);
   return new StreamableHTTPClientTransport(url);
@@ -128,4 +134,7 @@ export async function mcpToolsContext() {
 
 function safeParse(s) {
   try { return JSON.parse(s); } catch { return []; }
+}
+function safeParseObj(s) {
+  try { const v = JSON.parse(s); return (v && typeof v === 'object') ? v : {}; } catch { return {}; }
 }

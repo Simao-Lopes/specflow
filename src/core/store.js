@@ -133,6 +133,7 @@ function migrate() {
       command TEXT,
       url TEXT,
       args TEXT DEFAULT '[]',
+      env TEXT DEFAULT '{}',
       enabled INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -147,6 +148,12 @@ function migrate() {
   if (!jcols.includes('step_index')) db.exec('ALTER TABLE jobs ADD COLUMN step_index INTEGER DEFAULT 0');
   if (!jcols.includes('gate_step')) db.exec('ALTER TABLE jobs ADD COLUMN gate_step TEXT');
   if (!jcols.includes('gate_state')) db.exec("ALTER TABLE jobs ADD COLUMN gate_state TEXT DEFAULT 'none'");
+
+  // Migrate MCP connections to include an env (JSON) column.
+  try {
+    const mcols = db.prepare('PRAGMA table_info(mcp_connections)').all().map(c => c.name);
+    if (mcols.length && !mcols.includes('env')) db.exec("ALTER TABLE mcp_connections ADD COLUMN env TEXT DEFAULT '{}'");
+  } catch { /* table may not exist yet */ }
 
   // Seed default config
   const cfg = getDb();

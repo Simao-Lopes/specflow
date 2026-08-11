@@ -27,7 +27,7 @@ import {
 } from '../core/settings.js';
 import {
   listMcpConnections, getMcpConnection, addMcpConnection, updateMcpConnection, deleteMcpConnection,
-  testMcpConnection,
+  testMcpConnection, listMcpPresets,
 } from '../core/mcp.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -170,6 +170,8 @@ export function buildServer({ dbPath, port }) {
   app.patch('/api/mcp/:id', async (req) => updateMcpConnection(req.params.id, req.body));
   app.delete('/api/mcp/:id', async (req) => { deleteMcpConnection(req.params.id); return { ok: true }; });
   app.post('/api/mcp/:id/test', async (req) => testMcpConnection(req.params.id));
+  // One-click MCP preset templates.
+  app.get('/api/mcp/presets', async () => listMcpPresets());
 
   // Prompt versioning.
   app.get('/api/pipelines/:pid/steps/:sid/prompt-versions', async (req) => promptVersions(req.params.pid, req.params.sid));
