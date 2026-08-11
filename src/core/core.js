@@ -12,6 +12,7 @@ import { runHarness } from '../harnesses/index.js';
 import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
 import { resolveMethod } from '../methods/catalog.js';
 import { PIPELINE_PRESETS } from './presets.js';
+import { jobDefaults, autoVersionPipeline } from './settings.js';
 
 let runner;
 
@@ -96,6 +97,7 @@ export function createPipeline(input) {
       steps: JSON.stringify(Array.isArray(input.steps) ? input.steps : defaultSteps()),
     });
   const row = getDb().prepare('SELECT * FROM pipelines WHERE id=?').get(id);
+  autoVersionPipeline({ id, steps: row ? row.steps : [] });
   emit(EVT.PIPELINE_UPDATED, row);
   return row;
 }
@@ -112,6 +114,7 @@ export function updatePipeline(id, patch) {
   }
   if (sets.length) { vals.id = id; getDb().prepare(`UPDATE pipelines SET ${sets.join(',')}, updated_at=datetime('now') WHERE id=@id`).run(vals); }
   const row = getPipeline(id);
+  autoVersionPipeline({ id, steps: row ? row.steps : [] });
   emit(EVT.PIPELINE_UPDATED, row);
   return row;
 }
@@ -240,13 +243,13 @@ export async function runJob({ specId, harness, model, provider, agentId }) {
                         : getDb().prepare('SELECT * FROM agents WHERE active=1 ORDER BY created_at LIMIT 1').get();
 
   const jobId = randomUUID().slice(0, 8);
-  const repo  = spec.repo || agent?.repo;
+  const repo  = spec.repo || agent?.repo || jobDefaults().repo;
   const branch = `${agent?.branch_prefix || 'feature/'}spec-${spec.id}`;
   const job = {
     id: jobId, spec_id: specId,
-    harness: harness || agent?.harness || 'custom',
-    model: model || agent?.model || null,
-    provider: provider || agent?.provider || null,
+    harness: harness || agent?.harness || jobDefaults().harness || 'custom',
+    model: model || agent?.model || jobDefaults().model || null,
+    provider: provider || agent?.provider || jobDefaults().provider || null,
     status: 'queued', repo, branch,
   };
   getDb().prepare(`INSERT INTO jobs (id,spec_id,harness,model,provider,status,repo,branch)

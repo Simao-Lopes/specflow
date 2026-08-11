@@ -105,6 +105,26 @@ function migrate() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS connections (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      provider TEXT DEFAULT 'https',
+      base_branch TEXT DEFAULT 'main',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS prompt_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pipeline_id TEXT NOT NULL,
+      step_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      content TEXT,
+      note TEXT,
+      author TEXT DEFAULT 'human',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Migrate existing DBs that predate the steps column / gate columns

@@ -12,6 +12,7 @@ export const EVT = {
   JOB_STEP       : 'job:step',
   AGENT_UPDATED  : 'agent:updated',
   MESSAGE        : 'message:new',
+  CONFIG_UPDATED : 'config:updated',
   NOTIFY         : 'notify',
 } ;
 

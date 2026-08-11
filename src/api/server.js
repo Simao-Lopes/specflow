@@ -20,6 +20,11 @@ import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, get
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
 import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
 import { templateCatalog, listCustomActions, PHASE_LABELS } from '../methods/catalog.js';
+import {
+  getSettings, updateSettings, jobDefaults,
+  listConnections, addConnection, updateConnection, deleteConnection, testConnection,
+  savePromptVersion, promptVersions, restorePromptVersion,
+} from '../core/settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -109,7 +114,33 @@ export function buildServer({ dbPath, port }) {
     models         : MODEL_CATALOG,
     providers      : PROVIDER_LIST,
     channels       : listChannels(),
+    settings       : getSettings(),
+    connections    : listConnections(),
   }));
+  // Editable preferences.
+  app.get('/api/settings', async () => getSettings());
+  app.put('/api/settings', async (req) => updateSettings(req.body));
+
+  // Git connections.
+  app.get('/api/connections', async () => listConnections());
+  app.post('/api/connections', async (req) => addConnection(req.body));
+  app.patch('/api/connections/:id', async (req, rep) => updateConnection(req.params.id, req.body) ?? rep.code(404).send({ error: 'not found' }));
+  app.delete('/api/connections/:id', async (req) => { deleteConnection(req.params.id); return { ok: true }; });
+  app.post('/api/connections/:id/test', async (req) => testConnection(req.params.id));
+
+  // Prompt versioning.
+  app.get('/api/pipelines/:pid/steps/:sid/prompt-versions', async (req) => promptVersions(req.params.pid, req.params.sid));
+  app.post('/api/pipelines/:pid/steps/:sid/prompt-versions', async (req) => savePromptVersion(req.params.pid, req.params.sid, req.body?.content, { note: req.body?.note, author: req.body?.author }));
+  app.post('/api/pipelines/:pid/steps/:sid/prompt-versions/restore/:version', async (req, rep) => {
+    try {
+      const content = restorePromptVersion(req.params.pid, req.params.sid, Number(req.params.version));
+      // Apply back onto the pipeline's step (by step_id) and re-save, which also auto-versions.
+      const p = getPipeline(req.params.pid);
+      const steps = (p?.steps || []).map((s) => String(s.id) === String(req.params.sid) ? { ...s, prompt: typeof content === 'string' ? content : (content.prompt || s.prompt) } : s);
+      const saved = updatePipeline(req.params.pid, { steps });
+      return { ok: true, pipeline: saved };
+    } catch (e) { return rep.code(400).send({ error: e.message }); }
+  });
 
   // --- Static web UI (built) ---
   const webDist = join(__dirname, '../../web/dist');
@@ -130,6 +161,7 @@ export function buildServer({ dbPath, port }) {
     mk(EVT.JOB_LOG, p => { if (socket.jobFilters?.includes(p.jobId) || !socket.jobFilters?.length) socket.emit('log', p); });
     mk(EVT.JOB_STEP, p => { if (socket.jobFilters?.includes(p.job_id) || !socket.jobFilters?.length) socket.emit('step', p); });
     mk(EVT.MESSAGE, p => socket.emit('message', p));
+    mk(EVT.CONFIG_UPDATED, p => socket.emit('config', p));
     mk(EVT.NOTIFY, p => socket.emit('notify', p));
 
     socket.on('watch-job', (jobId) => { socket.jobFilters = [jobId]; });
