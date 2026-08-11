@@ -11,6 +11,7 @@ import { emit, EVT } from './events.js';
 import { runHarness } from '../harnesses/index.js';
 import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
 import { resolveMethod } from '../methods/catalog.js';
+import { PIPELINE_PRESETS } from './presets.js';
 
 let runner;
 
@@ -120,6 +121,23 @@ export function deletePipeline(id) {
   getDb().prepare('DELETE FROM pipelines WHERE id=?').run(id);
   emit(EVT.PIPELINE_UPDATED, { id, deleted: true });
   emit(EVT.SPEC_UPDATED, { id: '_', refetch: true });
+}
+
+// Instantiate one (or all) industry presets into real pipelines. Returns the
+// created pipelines. Skips any preset whose unique name already exists.
+export function instantiatePresets({ only } = {}) {
+  const presets = listPresets();
+  const created = [];
+  for (const p of presets) {
+    if (only && p.name !== only) continue;
+    const exists = getDb().prepare('SELECT id FROM pipelines WHERE name=?').get(p.name);
+    if (exists) continue;
+    created.push(createPipeline({ name: p.name, description: p.description, steps: p.steps }));
+  }
+  return created;
+}
+export function listPresets() {
+  return PIPELINE_PRESETS;
 }
 
 // Resolve a spec's effective steps: from its pipeline, falling back to its own
@@ -398,7 +416,7 @@ async function executeStep(job, spec, step, { checkout }) {
   // Resolve an industry-method or custom-action into execution config when the
   // step declares a `method`. Otherwise the step is fully custom as configured.
   const method = resolveMethod(step, { repoRoot: jobRepoRoot() });
-  const runStep = method ? { ...step, ...pick(method, ['harness', 'command', 'prompt']) } : step;
+  const runStep = method ? { ...step, ...pick(method, ['harness', 'command', 'prompt', 'provider', 'model']) } : step;
 
   addLog(jobIdT(job), `— Step: ${step.name}${method ? ` [method: ${method.name}]` : (step.harness ? ` (harness ${step.harness})` : '')}`);
   setStep(jobIdT(job), step, { status: 'running', attempt: 1 });
@@ -417,7 +435,7 @@ async function executeStep(job, spec, step, { checkout }) {
     try {
       const result = await runHarness({
         id: jobIdT(job),
-        harness: runStep.harness, model: step.model || job.model, provider: step.provider || job.provider,
+        harness: runStep.harness, model: runStep.model || job.model, provider: runStep.provider || job.provider,
         repo: job.repo, branch: job.branch,
         step: runStep, feedback, lifecycle: 'work',
       }, { checkout, repo: job.repo, spec });
@@ -458,7 +476,7 @@ async function executeStep(job, spec, step, { checkout }) {
         try {
           const vres = await runHarness({
             id: jobIdT(job),
-            harness: vh, model: v.model || job.model, provider: v.provider || job.provider,
+            harness: vh, model: runV.model || job.model, provider: runV.provider || job.provider,
             repo: job.repo, branch: job.branch,
             step: runV, feedback, lifecycle: 'verify',
           }, { checkout, repo: job.repo, spec });

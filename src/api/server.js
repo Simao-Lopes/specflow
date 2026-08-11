@@ -12,6 +12,7 @@ import {
   listJobs, getJob, jobLogs, jobSteps, runJob, gateJob,
   listMessages, addMessage, stepsOf,
   listPipelines, getPipeline, createPipeline, updatePipeline, deletePipeline,
+  instantiatePresets, listPresets,
 } from '../core/core.js';
 import { on, EVT } from '../core/events.js';
 import { initStore, getDb } from '../core/store.js';
@@ -64,6 +65,14 @@ export function buildServer({ dbPath, port }) {
   app.post('/api/pipelines', async (req) => createPipeline(req.body));
   app.patch('/api/pipelines/:id', async (req) => updatePipeline(req.params.id, req.body));
   app.delete('/api/pipelines/:id', async (req) => { deletePipeline(req.params.id); return { ok: true }; });
+
+  // Industry pipeline presets — complete ready-to-run flows built from methods.
+  app.get('/api/presets', async () => listPresets());
+  // Instantiate presets into real pipelines: {only?: '<name>' } or {} for all.
+  app.post('/api/presets/instantiate', async (req) => {
+    const created = instantiatePresets({ only: req.body?.only });
+    return { created: listPipelines().map((p) => p.name) };
+  });
 
   // A spec resolves its pipeline's steps (read-only here; editing happens in the Pipelines builder).
   app.get('/api/specs/:id/steps', async (req) => {

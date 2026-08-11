@@ -15,6 +15,18 @@ import { join, isAbsolute, resolve } from 'node:path';
 // `tpl` is a prompt template with {feature}, {description}, {acceptance},
 // {phase} placeholders. `harness`: llm | hermes | claude | custom.
 // ---------------------------------------------------------------------------
+// Default models used when an LLM template has no provider/model set.
+const METHODS_LLM_DEFAULT = {
+  gemini: 'gemini-3.5-flash-lite',
+  openrouter: 'deepseek/deepseek-chat',
+  nvidia: 'nvidia/llama-3.1-nemotron-70b-instruct',
+  ollama: 'qwen3:30b-a3b',
+};
+
+function getEnv(k) {
+  try { return process.env[k] || ''; } catch { return ''; }
+}
+
 export const METHODS = {
   plan: [
     {
@@ -265,14 +277,26 @@ export function resolveMethod(step, ctx = {}) {
   for (const [phase, list] of Object.entries(METHODS)) {
     const tpl = list.find((t) => t.id === m);
     if (tpl) {
-      return {
+      const resolved = {
         source: 'template', phase, id: tpl.id, name: tpl.name, harness: tpl.harness,
         command: tpl.command || '',
         prompt: fillTemplate(tpl.tpl, step),
       };
+      // LLM-based templates need a working provider/model by default so they run
+      // even if the step didn't specify one. Prefer an explicit local setup.
+      if (tpl.harness === 'llm') {
+        resolved.provider = step?.provider || getEnv('SPECFLOW_LLM_PROVIDER') || 'gemini';
+        resolved.model = step?.model || getEnv('SPECFLOW_LLM_MODEL') || schemaModel(resolved.provider);
+      }
+      return resolved;
     }
   }
   return null;
+}
+
+function schemaModel(provider) {
+  const m = (METHODS_LLM_DEFAULT || {})[provider];
+  return m || (provider === 'openrouter' ? 'deepseek/deepseek-chat' : null);
 }
 
 // Flattened template list for the UI, grouped by phase, with complexity label.
