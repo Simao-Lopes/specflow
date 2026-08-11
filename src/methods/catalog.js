@@ -63,7 +63,7 @@ export const METHODS = {
         `(prioritized user stories with acceptance scenarios, functional requirements, measurable ` +
         `success criteria, key entities, assumptions) written to a spec.md leaning on the spec template. ` +
         `Acceptance criteria: {acceptance}\n\n# Official /specify instruction\n\n` +
-        `{{SPEC_KIT_SOURCE}}`,
+        `{{SOURCE}}`,
     },
     {
       id: 'plan-technical', name: 'Technical plan (how)', complexity: 3,
@@ -74,24 +74,28 @@ export const METHODS = {
         `Execute the implementation planning workflow producing research.md, data-model.md, ` +
         `contracts/, and quickstart.md per the plan template, respecting the constitution. ` +
         `Acceptance criteria: {acceptance}\n\n# Official /plan instruction\n\n` +
-        `{{SPEC_KIT_SOURCE}}`,
+        `{{SOURCE}}`,
     },
     {
       id: 'plan-adr', name: 'ADR + plan', complexity: 4,
       harness: 'llm',
-      tpl: `For feature: {description}, produce:
-1) An Architecture Decision Record (ADR) — context, decision, consequences, with at least 2 alternatives considered.
-2) A technical plan referencing the ADR.
-Acceptance criteria: {acceptance}
-This captures WHY decisions were made, reviewable like version control for thinking.`,
+      file: 'adr/adr-template.md',
+      source: 'adr/madr',
+      tpl: `You are producing an Architecture Decision Record (MADR/ADR.org format) for feature: {description}. ` +
+        `Follow the canonical MADR template below (verbatim): status, date, decision drivers, considered ` +
+        `options, decision outcome, and consequences — at least 2 alternatives considered. ` +
+        `Then a short technical plan referencing the ADR. Acceptance: {acceptance}\n\n` +
+        `# Official ADR template (MADR — Architecture Decision Records)\n\n{{SOURCE}}`,
     },
     {
       id: 'plan-cosmos', name: 'Full design doc (cosmos-style)', complexity: 5,
       harness: 'llm',
-      tpl: `Write a comprehensive design document (RFC style) for: {description}
-Sections: Context & motivation, Goals/Non-goals, Proposed design, Alternatives considered, Data model, API surface, Migration, Testing strategy, Open questions.
-Acceptance criteria: {acceptance}
-Be thorough — this is the most rigorous planning template.`,
+      file: 'spec-kit/plan-template.md',
+      source: 'github/spec-kit',
+      tpl: `You are writing a comprehensive design/implementation plan for feature: {description}. ` +
+        `Follow the canonical plan template below (verbatim): technical context, constitution check, ` +
+        `project structure, complexity tracking. Acceptance: {acceptance}\n\n` +
+        `# Official plan template (GitHub Spec Kit)\n\n{{SOURCE}}`,
     },
   ],
 
@@ -104,10 +108,13 @@ Be thorough — this is the most rigorous planning template.`,
     {
       id: 'code-tdd', name: 'Test-driven (red→green→refactor)', complexity: 2,
       harness: 'hermes',
-      tpl: `Implement via strict TDD for: {description}
-Acceptance: {acceptance}
-1) Write a failing test first (red). 2) Write the minimal code to pass (green). 3) Refactor.
-Only consider the feature done when the test passes.`,
+      file: 'tdd/red-green-refactor.md',
+      source: 'kent beck / TDD',
+      tpl: `Implement via strict TDD for: {description}. Acceptance: {acceptance}. ` +
+        `Follow the canonical TDD workflow below (verbatim): the Three Laws and Red-Green-Refactor ` +
+        `cycle — one failing test first, minimal code to pass, then refactor. ` +
+        `Only consider the feature done when the test passes. Acceptance: {acceptance}\n\n` +
+        `# Test-Driven Development — Red·Green·Refactor\n\n{{SOURCE}}`,
     },
     {
       id: 'code-spec-first', name: 'Spec-first implement (Spec Kit)', complexity: 3,
@@ -117,13 +124,17 @@ Only consider the feature done when the test passes.`,
       tpl: `You are running the GitHub Spec Kit /implement command for feature: {description}. ` +
         `Implement the project from the spec/plan/tasks per the authoritative instruction below. ` +
         `Follow it verbatim (phases, checklists, commit discipline). Acceptance: {acceptance}\n\n` +
-        `# Official /implement instruction\n\n{{SPEC_KIT_SOURCE}}`,
+        `# Official /implement instruction\n\n{{SOURCE}}`,
     },
     {
       id: 'code-conventional', name: 'Conventional commits + structure', complexity: 4,
       harness: 'hermes',
-      tpl: `Implement: {description}. Acceptance: {acceptance}.
-Follow conventional commit style, keep changes structured into logical commits, respect existing code conventions, and add a short changelog entry.`,
+      file: 'conventional-commits/spec.md',
+      source: 'conventionalcommits.org',
+      tpl: `Implement: {description}. Acceptance: {acceptance}. ` +
+        `Follow the Conventional Commits specification below (verbatim) for commit messages — ` +
+        `feat/fix/docs/refactor with scope and optional body/breaking-change markers. Keep commits structured ` +
+        `and logical. Acceptance: {acceptance}\n\n# Conventional Commits Specification (v1.0.0)\n\n{{SOURCE}}`,
     },
     {
       id: 'code-parallel', name: 'Multi-variant exploration', complexity: 5,
@@ -141,7 +152,12 @@ Follow conventional commit style, keep changes structured into logical commits, 
     {
       id: 'docs-changelog', name: 'Changelog + release notes', complexity: 2,
       harness: 'llm',
-      tpl: 'Write changelog/release-note entries for: {description}. Acceptance: {acceptance}. Use conventional-changelog style (Added/Changed/Fixed/Deprecated/Removed), referencing the work done.',
+      file: 'changelog/keep-a-changelog.md',
+      source: 'keepachangelog.com',
+      tpl: `Write changelog/release-note entries for: {description}. Acceptance: {acceptance}. ` +
+        `Follow the Keep-a-Changelog methodology below (verbatim): Added/Changed/Deprecated/Removed/` +
+        `Fixed/Security sections, un-released vs released, human-readable. Acceptance: {acceptance}\n\n` +
+        `# Keep a Changelog (official)\n\n{{SOURCE}}`,
     },
     {
       id: 'docs-api', name: 'API reference (OpenAPI/docstrings)', complexity: 3,
@@ -165,31 +181,55 @@ Follow conventional commit style, keep changes structured into logical commits, 
       id: 'test-smoke', name: 'Smoke check', complexity: 1,
       harness: 'custom',
       command: '{checkout}/{smoke}', // placeholder; overridden by user command usually
-      tpl: 'Smoke-test the change for: {description}. Acceptance: {acceptance}. Run the relevant command and confirm it does not crash.',
+      file: 'test-pyramid/pyramid.md',
+      source: 'martinfowler.com',
+      tpl: `Smoke-test the change for: {description}. Acceptance: {acceptance}. ` +
+        `Run the relevant command and confirm it does not crash. Test selection follows the ` +
+        `Test Pyramid (Martin Fowler) below. Follow it verbatim.\n\n# The Test Pyramid (Martin Fowler)\n\n{{SOURCE}}`,
     },
     {
       id: 'test-unit', name: 'Unit tests', complexity: 2,
       harness: 'custom',
       command: '',
-      tpl: 'Write/run unit tests for the change: {description}. Acceptance: {acceptance}. Cover the new logic at unit level.',
+      file: 'test-pyramid/pyramid.md',
+      source: 'martinfowler.com',
+      tpl: `Write/run UNIT tests for the change: {description}. Acceptance: {acceptance}. ` +
+        `These are the base of the Test Pyramid (Martin Fowler) below — many low-level unit tests ` +
+        `covering the new logic in isolation. Follow it verbatim. Acceptance: {acceptance}\n\n` +
+        `# The Test Pyramid (Martin Fowler)\n\n{{SOURCE}}`,
     },
     {
       id: 'test-contract', name: 'Contract / API tests', complexity: 3,
       harness: 'custom',
       command: '',
-      tpl: 'Add/run contract tests for: {description}. Acceptance: {acceptance}. Verify the public API surface against the expected behaviour.',
+      file: 'test-pyramid/pyramid.md',
+      source: 'martinfowler.com',
+      tpl: `Add/run CONTRACT tests for: {description}. Acceptance: {acceptance}. ` +
+        `The Test Pyramid below describes the intermediate subcutaneous/service layer — ` +
+        `verify the public API surface against expected behaviour without the UI. Follow it verbatim.\n\n` +
+        `# The Test Pyramid (Martin Fowler)\n\n{{SOURCE}}`,
     },
     {
       id: 'test-integration', name: 'Integration tests', complexity: 4,
       harness: 'custom',
       command: '',
-      tpl: 'Write/run integration tests for: {description}. Acceptance: {acceptance}. Exercise real components together (DB, services, network).',
+      file: 'test-pyramid/pyramid.md',
+      source: 'martinfowler.com',
+      tpl: `Write/run INTEGRATION tests for: {description}. Acceptance: {acceptance}. ` +
+        `Exercise real components together (DB, services, network) — the middle service layer of the ` +
+        `Test Pyramid below. Follow it verbatim. Acceptance: {acceptance}\n\n` +
+        `# The Test Pyramid (Martin Fowler)\n\n{{SOURCE}}`,
     },
     {
       id: 'test-e2e', name: 'End-to-end + property', complexity: 5,
       harness: 'custom',
       command: '',
-      tpl: 'Add/run end-to-end tests and property-based checks for: {description}. Acceptance: {acceptance}. Cover full user paths and invariants.',
+      file: 'test-pyramid/pyramid.md',
+      source: 'martinfowler.com',
+      tpl: `Add/run END-TO-END + property-based tests for: {description}. Acceptance: {acceptance}. ` +
+        `The Test Pyramid below warns that broad-stack E2E are brittle/slow — use them sparingly as ` +
+        `the top of the pyramid, cover full user paths, and back them with unit tests. Follow it verbatim.\n\n` +
+        `# The Test Pyramid (Martin Fowler)\n\n{{SOURCE}}`,
     },
   ],
 
@@ -206,14 +246,18 @@ Follow conventional commit style, keep changes structured into logical commits, 
       source: 'github/spec-kit',
       tpl: `You are running the GitHub Spec Kit /checklist command to review feature quality for: {description}. ` +
         `Follow the authoritative instruction below (verbatim) — generate and validate a requirements/implementation checklist. ` +
-        `Acceptance: {acceptance}\n\n# Official /checklist instruction\n\n{{SPEC_KIT_SOURCE}}`,
+        `Acceptance: {acceptance}\n\n# Official /checklist instruction\n\n{{SOURCE}}`,
     },
     {
       id: 'review-security', name: 'Security review (OWASP)', complexity: 3,
       harness: 'llm',
-      tpl: `Security-review the changes for: {description} against OWASP Top 10 / ASVS:
-Injection, authentication/authorization, sensitive data exposure, business logic, SSRF, and dependency risk.
-Acceptance: {acceptance}. Rate each finding by severity and give a go/no-go.`,
+      file: 'owasp/threat-modeling.md',
+      source: 'owasp.org',
+      tpl: `Security-review the changes for: {description} using OWASP threat modeling (STRIDE). ` +
+        `Follow the OWASP Threat Modeling Cheat Sheet below (verbatim): model the system, identify ` +
+        `threats (spoofing/tampering/repudiation/info disclosure/DoS/elevation), rank them, define ` +
+        `mitigations. Rate each finding by severity and give a go/no-go. Acceptance: {acceptance}\n\n` +
+        `# OWASP Threat Modeling Cheat Sheet\n\n{{SOURCE}}`,
     },
     {
       id: 'review-performance', name: 'Performance review', complexity: 4,
@@ -387,10 +431,11 @@ export function rawTemplate(step) {
 function fillTemplate(tpl, step) {
   const spec = step?._spec || {};
   // Inline any authentic methodology command/template content referenced by the
-  // method (e.g. GitHub Spec Kit's /specify, /plan command definitions).
-  if (typeof tpl === 'string' && tpl.includes('{{SPEC_KIT_SOURCE}}')) {
+  // method via {file: 'methodology/...'}. The `{{SOURCE}}` marker is replaced
+  // with the exact file content so the agent gets the real, canonical prompt.
+  if (typeof tpl === 'string' && tpl.includes('{{SOURCE}}')) {
     const file = methodFile(step?.method);
-    if (file) tpl = String(tpl).replace('{{SPEC_KIT_SOURCE}}', file);
+    if (file) tpl = String(tpl).replace('{{SOURCE}}', file);
   }
   return String(tpl || '')
     .replaceAll('{feature}', spec.title || (step?.name || 'the feature'))
