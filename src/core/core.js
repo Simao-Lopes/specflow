@@ -1,5 +1,7 @@
 // Core Orchestration service. Owns the spec lifecycle + job execution pipeline.
 import { randomUUID } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { getDb, initStore } from './store.js';
 import { emit, EVT } from './events.js';
 import { runHarness } from '../harnesses/index.js';
@@ -131,15 +133,13 @@ async function executeJob(jobId) {
 
   try {
     mark(jobId, 'running');
-    addLog(jobId, `Starting job on branch ${job.branch}`);
-    const checkout = await prepareBranch({ repoUrl: job.repo, branch: job.branch, base: 'main', repoRoot });
-    const result = await runHarness(job, {
-      checkout, repo: job.repo, spec,
-      config: getConfigContext(job),
-    });
-    addLog(jobId, `Harness finished: ${result.message || 'ok'}`);
 
     if (job.repo) {
+      addLog(jobId, `Checking out branch ${job.branch} from ${job.repo}`);
+      const checkout = await prepareBranch({ repoUrl: job.repo, branch: job.branch, base: 'main', repoRoot });
+      const result = await runHarness(job, { checkout, repo: job.repo, spec, config: getConfigContext(job) });
+      addLog(jobId, `Harness finished: ${result.message || 'ok'}`);
+
       const push = await commitAndPush({ checkout, branch: job.branch, repoUrl: job.repo, message: `[SpecFlow] ${spec.title}` });
       if (push.changed) {
         addLog(jobId, 'Committed & pushed changes');
@@ -157,7 +157,12 @@ async function executeJob(jobId) {
         updateSpec(job.spec_id, { status: 'done' });
       }
     } else {
-      addLog(jobId, 'No repo configured — job ran in place');
+      // No repo configured — run the harness in a scratch dir; no git round-trip.
+      addLog(jobId, 'No repo configured — running in-scratch (no git/PR)');
+      const scratch = join(repoRoot, '_scratch', `job-${jobId}`);
+      mkdirSync(scratch, { recursive: true });
+      const result = await runHarness(job, { checkout: scratch, repo: null, spec, config: getConfigContext(job) });
+      addLog(jobId, `Harness finished: ${result.message || 'ok'}`);
       updateSpec(job.spec_id, { status: 'review' });
     }
     mark(jobId, 'succeeded');
