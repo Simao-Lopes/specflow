@@ -18,6 +18,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { MCP_PRESETS } from './mcpPresets.js';
+import { resolveEnv } from './secrets.js';
 
 export function listMcpPresets() {
   return MCP_PRESETS;
@@ -71,7 +72,7 @@ export function deleteMcpConnection(id) {
 
 function makeTransport(c) {
   if (c.transport === 'stdio') {
-    return new StdioClientTransport({ command: c.command, args: c.args || [], env: { ...process.env, ...(c.env || {}) }, stderr: 'pipe' });
+    return new StdioClientTransport({ command: c.command, args: c.args || [], env: { ...process.env, ...resolveEnv(c.env || {}) }, stderr: 'pipe' });
   }
   const url = new URL(c.url);
   return new StreamableHTTPClientTransport(url);

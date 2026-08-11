@@ -137,6 +137,14 @@ function migrate() {
       enabled INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS secrets (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Migrate existing DBs that predate the steps column / gate columns

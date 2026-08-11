@@ -202,6 +202,48 @@ export default function Config({ config, onNotify, onChanged }) {
   const [selectedPreset, setSelectedPreset] = useState('');
   const [presetEnv, setPresetEnv] = useState({}); // var -> value entered by user
 
+  // Secrets vault.
+  const [secrets, setSecrets] = useState([]);
+  const [secretsLoading, setSecretsLoading] = useState(false);
+  const [secFormOpen, setSecFormOpen] = useState(false);
+  const [newSecret, setNewSecret] = useState({ key: '', value: '', note: '' });
+  const [addingSecret, setAddingSecret] = useState(false);
+  const [secShow, setSecShow] = useState({}); // key -> show/hide (flag only; value never displayed back)
+
+  const refreshSecrets = useCallback(async () => {
+    setSecretsLoading(true);
+    try {
+      const list = await api.listSecrets();
+      setSecrets(Array.isArray(list) ? list : []);
+    } catch (e) { onNotify(e.message, 'error'); }
+    finally { setSecretsLoading(false); }
+  }, [onNotify]);
+
+  useEffect(() => { refreshSecrets(); }, [refreshSecrets]);
+
+  const addSecret = async (e) => {
+    e.preventDefault();
+    if (!newSecret.key.trim() || !newSecret.value) { onNotify('Secret key and value are required', 'error'); return; }
+    setAddingSecret(true);
+    try {
+      await api.addSecret(newSecret.key.trim(), newSecret.value, newSecret.note.trim());
+      onNotify('Secret stored (encrypted)', 'success');
+      setNewSecret({ key: '', value: '', note: '' });
+      setSecFormOpen(false);
+      await refreshSecrets();
+    } catch (err) { onNotify(err.message, 'error'); }
+    finally { setAddingSecret(false); }
+  };
+
+  const deleteSecret = async (s) => {
+    if (!window.confirm(`Delete secret "${s.key}"? This cannot be undone.`)) return;
+    try {
+      await api.deleteSecret(s.key);
+      onNotify('Secret deleted', 'info');
+      await refreshSecrets();
+    } catch (err) { onNotify(err.message, 'error'); }
+  };
+
   const refreshMcps = useCallback(async () => {
     setMcpLoading(true);
     try {
@@ -467,6 +509,9 @@ export default function Config({ config, onNotify, onChanged }) {
 
           {Object.keys(presetEnv).length > 0 && (
             <div className="preset-env">
+              <p className="muted small">
+                Tip: paste a value, or reference an encrypted secret as <code>{'${secret:KEY}'}</code> (configure below).
+              </p>
               {Object.entries(presetEnv).map(([k, v]) => {
                 const meta = (presets.find((p) => p.id === selectedPreset)?.env || []).find((e) => e.var === k);
                 return (
@@ -555,6 +600,61 @@ export default function Config({ config, onNotify, onChanged }) {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* ---------- Secrets vault ---------- */}
+      <div className="view-head section-head-inline">
+        <h3 className="section-title-standalone">Secrets <span className="muted small">(encrypted)</span></h3>
+        <button className="btn small ghost" onClick={() => setSecFormOpen((o) => !o)}>
+          {secFormOpen ? 'Cancel' : '+ Add secret'}
+        </button>
+      </div>
+
+      {secFormOpen && (
+        <form className="card form conn-form" onSubmit={addSecret}>
+          <div className="row">
+            <Field label="Key *" hint="e.g. github_pat, SLACK_BOT_TOKEN">
+              <input className="input mono" value={newSecret.key} onChange={(e) => setNewSecret((s) => ({ ...s, key: e.target.value }))} placeholder="my_api_key" />
+            </Field>
+            <Field label="Value *" hint="stored encrypted (AES-256-GCM)">
+              <input type="password" className="input mono" value={newSecret.value} onChange={(e) => setNewSecret((s) => ({ ...s, value: e.target.value }))} placeholder="••••••••" autoComplete="off" />
+            </Field>
+          </div>
+          <Field label="Note (optional)">
+            <input className="input" value={newSecret.note} onChange={(e) => setNewSecret((s) => ({ ...s, note: e.target.value }))} placeholder="what is this for?" />
+          </Field>
+          <p className="muted small">
+            Reference from MCP preset env as <code>{'${secret:KEY}'}</code>, e.g. <code>${'{'}secret:github_pat{'}'}</code>.
+          </p>
+          <div className="form-actions">
+            <button type="button" className="btn ghost" onClick={() => setSecFormOpen(false)}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={addingSecret}>{addingSecret ? 'Storing…' : 'Store secret'}</button>
+          </div>
+        </form>
+      )}
+
+      <div className="card config-card conns-card">
+        {secretsLoading && !secrets.length ? (
+          <p className="muted">Loading secrets…</p>
+        ) : secrets.length === 0 ? (
+          <p className="muted">No secrets stored. Add one (e.g. a GitHub PAT or Slack token) to use in MCP connections or agents.</p>
+        ) : (
+          <div className="conns-list">
+            {secrets.map((s) => (
+              <div key={s.key} className="conn-row">
+                <div className="conn-main">
+                  <span className="config-name mono">{s.key}</span>
+                  <span className="muted small">•••••••• (encrypted)</span>
+                  {s.note && <span className="chip small">{s.note}</span>}
+                </div>
+                <div className="conn-actions">
+                  <span className="muted small">updated {s.updated_at ? s.updated_at.slice(0, 16) : ''}</span>
+                  <button className="btn small danger" onClick={() => deleteSecret(s)}>Delete</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

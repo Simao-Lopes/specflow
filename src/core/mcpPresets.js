@@ -2,16 +2,116 @@
 // tooling. Each preset fills the connection form (name/transport/command/url/args)
 // and declares the env vars it needs (e.g. an API key) so the UI can collect
 // them and the connection is saved already configured.
+//
+// Env values may reference the encrypted secrets vault: "${secret:SOME_KEY}".
+// Leave a preset's key empty and connect it to a secret, or paste directly.
 
 export const MCP_PRESETS = [
+  // ---- Version control / code ----
   {
     id: 'github',
     name: 'GitHub',
-    description: 'Read/search repos, issues, PRs, code. Official GitHub MCP server (stdio).',
+    description: 'Repos, issues, PRs, code search — official GitHub MCP (stdio).',
     transport: 'stdio',
     command: 'npx',
     args: ['-y', 'github-mcp-server'],
     env: [{ var: 'GITHUB_PERSONAL_ACCESS_TOKEN', label: 'GitHub PAT', kind: 'password' }],
+  },
+  {
+    id: 'gitlab',
+    name: 'GitLab',
+    description: 'Projects, merge requests, issues, pipelines for GitLab.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'gitlab-mcp'],
+    env: [{ var: 'GITLAB_URL', label: 'GitLab URL', kind: 'text', optional: true }, { var: 'GITLAB_TOKEN', label: 'GitLab token', kind: 'password' }],
+  },
+  {
+    id: 'git',
+    name: 'Git (local)',
+    description: 'Inspect the local git repo: status, log, diff, blame.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'mcp-server-git', '--repository', 'REPO_PATH'],
+    env: [],
+  },
+  {
+    id: 'conventional-commits',
+    name: 'Conventional Commits',
+    description: 'Tooling that helps write conventional commit messages.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'conventionalcommits-mcp'],
+    env: [],
+  },
+  {
+    id: 'graphql',
+    name: 'GraphQL',
+    description: 'A GraphQL client MCP server for talking to GraphQL APIs.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'graphql-mcp'],
+    env: [],
+  },
+
+  // ---- Databases / storage ----
+  {
+    id: 'postgres',
+    name: 'PostgreSQL',
+    description: 'Query and inspect a Postgres database (read-only by default).',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@henkey/postgres-mcp', '--connection-string', '${secret:POSTGRES_CONNECTION_STRING}'],
+    env: [{ var: 'POSTGRES_CONNECTION_STRING', label: 'Postgres connection string', kind: 'password' }],
+  },
+  {
+    id: 'mysql',
+    name: 'MySQL',
+    description: 'Query and inspect a MySQL/MariaDB database.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'mysql-mcp-server', '--mysql-uri', '${secret:MYSQL_URI}'],
+    env: [{ var: 'MYSQL_URI', label: 'MySQL URI', kind: 'password' }],
+  },
+  {
+    id: 'sqlite',
+    name: 'SQLite',
+    description: 'Query and inspect a local SQLite database file.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'sqlite-mcp-server', '--db-path', '/home/ubuntu/specflow/data/specflow.db'],
+    env: [],
+  },
+
+  // ---- Cloud / infra ----
+  {
+    id: 'aws',
+    name: 'AWS',
+    description: 'Research AWS services, docs, CLI reference (resource-insensitive).',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'aws-docs-mcp-server'],
+    env: [{ var: 'AWS_DEFAULT_REGION', label: 'AWS region', kind: 'text', optional: true }],
+  },
+  {
+    id: 'kubernetes',
+    name: 'Kubernetes',
+    description: 'Inspect clusters: pods, deployments, services, logs.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'kubernetes-mcp-server'],
+    env: [],
+  },
+  {
+    id: 'terraform',
+    name: 'Terraform',
+    description: 'Inspect Terraform state and plan changes for IaC repos.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'terraform-mcp'],
+    env: [],
+
+  // ---- Documentation / research ----
   },
   {
     id: 'fetch',
@@ -20,33 +120,6 @@ export const MCP_PRESETS = [
     transport: 'stdio',
     command: 'npx',
     args: ['-y', 'mcp-server-fetch'],
-    env: [],
-  },
-  {
-    id: 'playwright',
-    name: 'Playwright (browser)',
-    description: 'Drive a real browser: navigate, click, screenshot, extract. For E2E/web checks.',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@playwright/mcp@latest'],
-    env: [],
-  },
-  {
-    id: 'filesystem',
-    name: 'Filesystem',
-    description: 'Read/write/search local files under the given directories.',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-filesystem', '/home/ubuntu/specflow'],
-    env: [],
-  },
-  {
-    id: 'git',
-    name: 'Git',
-    description: 'Inspect the local git repo: status, log, diff, blame.',
-    transport: 'stdio',
-    command: 'npx',
-    args: ['-y', 'mcp-server-git', '--repository', '/home/ubuntu/specflow'],
     env: [],
   },
   {
@@ -59,6 +132,26 @@ export const MCP_PRESETS = [
     env: [{ var: 'CONTEXT7_API_KEY', label: 'Context7 API key', kind: 'password', optional: true }],
   },
   {
+    id: 'firecrawl',
+    name: 'Firecrawl (crawl/scrape)',
+    description: 'Crawl, scrape, and extract structured data from websites — needs API key.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'firecrawl-mcp'],
+    env: [{ var: 'FIRECRAWL_API_KEY', label: 'Firecrawl API key', kind: 'password' }],
+  },
+  {
+    id: 'mcp-docs',
+    name: 'MCP Docs',
+    description: 'Look up MCP protocol docs when building/connecting tools.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@maorbez/mcp-docs'],
+    env: [],
+
+  // ---- Search ----
+  },
+  {
     id: 'brave-search',
     name: 'Brave Search',
     description: 'Web search via Brave API. Needs a (free) API key.',
@@ -67,6 +160,17 @@ export const MCP_PRESETS = [
     args: ['-y', '@modelcontextprotocol/server-brave-search'],
     env: [{ var: 'BRAVE_API_KEY', label: 'Brave API key', kind: 'password' }],
   },
+  {
+    id: 'duckduckgo',
+    name: 'DuckDuckGo Search',
+    description: 'Web search with no API key required.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'mcp-server-duckduckgo-search'],
+    env: [],
+  },
+
+  // ---- Messaging / project mgmt ----
   {
     id: 'slack',
     name: 'Slack',
@@ -84,6 +188,53 @@ export const MCP_PRESETS = [
     env: [{ var: 'ATLASSIAN_API_TOKEN', label: 'Atlassian API token', kind: 'password' }],
   },
   {
+    id: 'linear',
+    name: 'Linear',
+    description: 'Issue tracking: create/search issues, comments, cycles for Linear.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@mcp/linear', '--token', '${secret:LINEAR_API_KEY}'],
+    env: [{ var: 'LINEAR_API_KEY', label: 'Linear API key', kind: 'password' }],
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    description: 'Pages, databases, blocks for Notion workspaces.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@notionhq/notion-mcp-server'],
+    env: [{ var: 'NOTION_TOKEN', label: 'Notion integration token', kind: 'password' }],
+  },
+  {
+    id: 'asana',
+    name: 'Asana',
+    description: 'Tasks, projects, comments for Asana.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'asana-mcp-with-tools'],
+    env: [{ var: 'ASANA_ACCESS_TOKEN', label: 'Asana access token', kind: 'password' }],
+  },
+  {
+    id: 'trello',
+    name: 'Trello',
+    description: 'Boards, lists, cards for Trello.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'mcp-trello'],
+    env: [{ var: 'TRELLO_API_KEY', label: 'Trello API key', kind: 'password' }, { var: 'TRELLO_API_TOKEN', label: 'Trello token', kind: 'password' }],
+  },
+  {
+    id: 'basecamp',
+    name: 'Basecamp',
+    description: 'Projects, to-dos, messages for Basecamp.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'basecamp-mcp'],
+    env: [{ var: 'BASECAMP_ACCESS_TOKEN', label: 'Basecamp access token', kind: 'password' }],
+
+  // ---- Observability / errors ----
+  },
+  {
     id: 'sentry',
     name: 'Sentry',
     description: 'Search issues/events in Sentry, read scope/org/project info.',
@@ -93,12 +244,77 @@ export const MCP_PRESETS = [
     env: [{ var: 'SENTRY_AUTH_TOKEN', label: 'Sentry auth token', kind: 'password' }],
   },
   {
+    id: 'datadog',
+    name: 'Datadog',
+    description: 'Query metrics, logs, dashboards from Datadog.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'datadog-mcp-server'],
+    env: [{ var: 'DD_API_KEY', label: 'Datadog API key', kind: 'password' }, { var: 'DD_APP_KEY', label: 'Datadog app key', kind: 'password' }],
+  },
+  {
+    id: 'grafana',
+    name: 'Grafana',
+    description: 'Query dashboards, data sources, alerts from Grafana.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', 'grafana-mcp'],
+    env: [{ var: 'GRAFANA_URL', label: 'Grafana URL', kind: 'text', optional: true }],
+
+  // ---- Testing / browser ----
+  },
+  {
+    id: 'playwright',
+    name: 'Playwright (browser)',
+    description: 'Drive a real browser: navigate, click, screenshot, extract. For E2E/web checks.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@playwright/mcp@latest'],
+    env: [],
+  },
+  {
+    id: 'puppeteer',
+    name: 'Puppeteer (browser)',
+    description: 'Headless Chrome automation via Puppeteer.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-puppeteer'],
+    env: [],
+  },
+  {
+    id: 'filesystem',
+    name: 'Filesystem',
+    description: 'Read/write/search local files under the given directories (edit the paths arg).',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', 'REPO_ROOT'],
+    env: [],
+  },
+  {
     id: 'sequential-thinking',
     name: 'Sequential Thinking',
     description: 'Deeper multi-step reasoning for the agent (no key needed).',
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
+    env: [],
+  },
+  {
+    id: 'memory',
+    name: 'Memory (knowledge graph)',
+    description: 'Persistent knowledge-graph memory for the agent (entities/relations).',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-memory'],
+    env: [],
+  },
+  {
+    id: 'everything',
+    name: 'Everything (test server)',
+    description: 'Echo/test MCP server exposing every tool type — for validating the plumbing.',
+    transport: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-everything'],
     env: [],
   },
 ];

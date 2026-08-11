@@ -29,6 +29,7 @@ import {
   listMcpConnections, getMcpConnection, addMcpConnection, updateMcpConnection, deleteMcpConnection,
   testMcpConnection, listMcpPresets,
 } from '../core/mcp.js';
+import { listSecrets, upsertSecret, deleteSecret, getSecretValue } from '../core/secrets.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -172,6 +173,16 @@ export function buildServer({ dbPath, port }) {
   app.post('/api/mcp/:id/test', async (req) => testMcpConnection(req.params.id));
   // One-click MCP preset templates.
   app.get('/api/mcp/presets', async () => listMcpPresets());
+
+  // Encrypted secrets vault.
+  app.get('/api/secrets', async () => listSecrets());
+  app.post('/api/secrets', async (req) => upsertSecret(req.body?.key, req.body?.value, req.body?.note || ''));
+  app.put('/api/secrets/:key', async (req) => upsertSecret(req.params.key, req.body?.value, req.body?.note || req.params.note || ''));
+  app.delete('/api/secrets/:key', async (req) => { deleteSecret(req.params.key); return { ok: true }; });
+  app.get('/api/secrets/:key/value', async (req, rep) => {
+    const v = getSecretValue(req.params.key);
+    return v === undefined ? rep.code(404).send({ error: 'not found' }) : { key: req.params.key, value: v };
+  });
 
   // Prompt versioning.
   app.get('/api/pipelines/:pid/steps/:sid/prompt-versions', async (req) => promptVersions(req.params.pid, req.params.sid));

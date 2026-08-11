@@ -84,6 +84,11 @@ export const api = {
   testMcp: (id) => request(`/api/mcp/${id}/test`, { method: 'POST' }),
   listMcpPresets: () => request('/api/mcp/presets'),
 
+  // Encrypted secrets vault.
+  listSecrets: () => request('/api/secrets'),
+  addSecret: (key, value, note) => request('/api/secrets', { method: 'POST', body: { key, value, note } }),
+  deleteSecret: (key) => request(`/api/secrets/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+
   // Pipeline step prompt versioning.
   promptVersions: (pid, sid) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`),
   savePromptVersion: (pid, sid, body) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`, { method: 'POST', body }),
