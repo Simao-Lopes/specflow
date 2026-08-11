@@ -10,11 +10,10 @@ import { getDb, initStore, defaultPipelineSteps } from './store.js';
 import { emit, EVT } from './events.js';
 import { runHarness } from '../harnesses/index.js';
 import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
-import { resolveMethod } from '../methods/catalog.js';
+import { resolveMethod, materializePrompts, resolvedStepPrompt, resolvedMethodPrompt, METHODS } from '../methods/catalog.js';
 import { PIPELINE_PRESETS } from './presets.js';
 import { jobDefaults, autoVersionPipeline } from './settings.js';
 import { writePipelineToDisk, deletePipelineFromDisk, pipelinesFromDisk } from './pipelinestore.js';
-import { materializePrompts } from '../methods/catalog.js';
 
 let runner;
 
@@ -178,18 +177,49 @@ export function syncPipelinesFromDisk() {
 
 // Make sure every pipeline's step prompts are MATERIALIZED (stored + visible),
 // even ones created before this feature existed. Idempotent: fills empty
-// step.prompt with the effective prompt and writes them to disk.
+// step.prompt with the effective prompt and writes them to disk. Also refreshes
+// steps whose stored prompt is STALE versus the current method template (e.g.
+// after upgrading to the authentic Spec Kit command files).
 export function materializeAllPrompts() {
   const all = listPipelines();
   let updated = 0;
   for (const p of all) {
     const steps = Array.isArray(p.steps) ? p.steps : [];
-    const needs = steps.some((s) => !(s && s.prompt && String(s.prompt).trim()));
-    if (!needs) continue;
-    updatePipeline(p.id, { steps });
+    let changed = false;
+    const next = steps.map((s) => {
+      const resolved = resolvedMethodPrompt(s);
+      const stale = (s && s.prompt != null && String(s.prompt).trim())
+        && !matchesCurrent(s, resolved);
+      if (!(s && s.prompt && String(s.prompt).trim()) || stale) {
+        changed = true;
+        return { ...s, prompt: resolved };
+      }
+      return s;
+    });
+    if (changed) updatePipeline(p.id, { steps: next });
     updated++;
   }
   return updated;
+}
+
+// A step's stored prompt stays valid if it already carries the authentic method
+// content, OR if it's a hand-written prompt. Only refresh when the method now
+// ships an authentic file and the stored prompt is still the old placeholder.
+function matchesCurrent(s, resolved) {
+  const stored = String(s.prompt || '').trim();
+  const methodHasFile = hasMethodFile(s.method);
+  // Already has the authentic instruction -> keep (idempotent).
+  if (methodHasFile && stored.includes('Official /')) return true;
+  return stored === resolved;
+}
+
+function hasMethodFile(methodId) {
+  if (!methodId) return false;
+  for (const list of Object.values(METHODS)) {
+    const t = list.find((x) => x.id === methodId);
+    if (t && t.file) return true;
+  }
+  return false;
 }
 
 // Resolve a spec's effective steps: from its pipeline, falling back to its own

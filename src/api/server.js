@@ -19,7 +19,7 @@ import { initStore, getDb } from '../core/store.js';
 import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, getPrimaryChannel, startNotificationBridge } from '../channels/router.js';
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
 import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
-import { templateCatalog, listCustomActions, PHASE_LABELS, resolvedStepPrompt } from '../methods/catalog.js';
+import { templateCatalog, listCustomActions, PHASE_LABELS, resolvedStepPrompt, rawTemplate } from '../methods/catalog.js';
 import {
   getSettings, updateSettings, jobDefaults,
   listConnections, addConnection, updateConnection, deleteConnection, testConnection,
@@ -91,18 +91,23 @@ export function buildServer({ dbPath, port }) {
     return stepsOf(s);
   });
 
-  // Effective prompts for every step of a pipeline (method templates filled) —
-  // so the UI can show the real prompt each step sends, not just blank step.prompt.
+  // Effective prompts for every step of a pipeline. `?specId=...` (optional)
+  // fills {description}/{acceptance} from a chosen spec so the preview shows the
+  // fully-resolved prompt, not blanks. Each step also includes `template` — the
+  // raw method template with {placeholders} visible.
   app.get('/api/pipelines/:id/prompts', (req) => {
     const p = getPipeline(req.params.id);
     if (!p) return { error: 'not found' };
+    const spec = req.query.specId ? getSpec(req.query.specId) : null;
+    const ctx = spec ? { title: spec.title, description: spec.description || '', acceptance_criteria: spec.acceptance_criteria || '' } : null;
     const steps = Array.isArray(p.steps) ? p.steps : [];
     const resolved = steps.map((s) => ({
       id: s.id, name: s.name, method: s.method || null,
-      prompt: resolvedStepPrompt(s),
+      prompt: resolvedStepPrompt(s, { spec: ctx }),
+      template: rawTemplate(s),
       stepPrompt: s.prompt || '',
     }));
-    return { pipelineId: p.id, steps: resolved };
+    return { pipelineId: p.id, spec: spec ? { id: spec.id, title: spec.title } : null, steps: resolved };
   });
   app.get('/api/pipelines/:id/steps/:sid/prompt', (req) => {
     const p = getPipeline(req.params.id);

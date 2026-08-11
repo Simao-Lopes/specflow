@@ -7,8 +7,27 @@
 //
 // Phases mirror GitHub Spec Kit (Microsoft):
 //   specify (what/why) -> plan (how) -> tasks/implement -> test -> review.
-import { readdirSync, statSync, existsSync } from 'node:fs';
-import { join, isAbsolute, resolve } from 'node:path';
+import { readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
+import { join, isAbsolute, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const TEMPLATES_DIR = resolve(__dirname, '../../templates');
+let _fileCache = {};
+
+// Load a real template/command file's content (cached). Templates live in
+// /templates/<methodology>/... and are the AUTHENTIC prompts — e.g. the actual
+// GitHub Spec Kit spec/plan/tasks templates and command definitions. A method
+// with a `file` field ships that exact content to the agent.
+function loadTemplateFile(relPath) {
+  if (!relPath) return '';
+  if (_fileCache[relPath]) return _fileCache[relPath];
+  const abs = isAbsolute(relPath) ? relPath : resolve(TEMPLATES_DIR, relPath);
+  let text = '';
+  try { if (existsSync(abs)) text = readFileSync(abs, 'utf8'); } catch { text = ''; }
+  _fileCache[relPath] = text;
+  return text;
+}
 
 // ---------------------------------------------------------------------------
 // Industry templates — ordered by increasing rigour/complexity per phase.
@@ -37,18 +56,25 @@ export const METHODS = {
     {
       id: 'plan-spec', name: 'Specify (what/why)', complexity: 2,
       harness: 'llm',
-      tpl: `Write a concise product specification for: {description}
-Acceptance criteria: {acceptance}
-Format: Problem → Goal → Functional requirements (bullets) → Out of scope → Open questions.
-DO NOT include technical implementation choices — this is the WHAT and WHY, not the how.`,
+      file: 'spec-kit/commands/specify.md',
+      source: 'github/spec-kit',
+      tpl: `You are running the GitHub Spec Kit /specify command for feature: {description}. ` +
+        `Follow the authoritative instruction below (verbatim) to produce a feature specification ` +
+        `(prioritized user stories with acceptance scenarios, functional requirements, measurable ` +
+        `success criteria, key entities, assumptions) written to a spec.md leaning on the spec template. ` +
+        `Acceptance criteria: {acceptance}\n\n# Official /specify instruction\n\n` +
+        `{{SPEC_KIT_SOURCE}}`,
     },
     {
       id: 'plan-technical', name: 'Technical plan (how)', complexity: 3,
       harness: 'llm',
-      tpl: `Produce a technical implementation plan for: {description}
-Acceptance criteria: {acceptance}
-Cover: proposed architecture, key components, data model / contracts, edge cases, risks.
-Keep it actionable — a senior engineer should be able to implement from this.`,
+      file: 'spec-kit/commands/plan.md',
+      source: 'github/spec-kit',
+      tpl: `You are running the GitHub Spec Kit /plan command for feature: {description}. ` +
+        `Execute the implementation planning workflow producing research.md, data-model.md, ` +
+        `contracts/, and quickstart.md per the plan template, respecting the constitution. ` +
+        `Acceptance criteria: {acceptance}\n\n# Official /plan instruction\n\n` +
+        `{{SPEC_KIT_SOURCE}}`,
     },
     {
       id: 'plan-adr', name: 'ADR + plan', complexity: 4,
@@ -86,9 +112,12 @@ Only consider the feature done when the test passes.`,
     {
       id: 'code-spec-first', name: 'Spec-first implement (Spec Kit)', complexity: 3,
       harness: 'hermes',
-      tpl: `Implement from an existing spec, tasks-first (GitHub Spec Kit process) for: {description}
-Acceptance: {acceptance}
-Break the work into small, independently-completable tasks; implement them in order; follow the repo's constitution/conventions already present.`,
+      file: 'spec-kit/commands/implement.md',
+      source: 'github/spec-kit',
+      tpl: `You are running the GitHub Spec Kit /implement command for feature: {description}. ` +
+        `Implement the project from the spec/plan/tasks per the authoritative instruction below. ` +
+        `Follow it verbatim (phases, checklists, commit discipline). Acceptance: {acceptance}\n\n` +
+        `# Official /implement instruction\n\n{{SPEC_KIT_SOURCE}}`,
     },
     {
       id: 'code-conventional', name: 'Conventional commits + structure', complexity: 4,
@@ -173,7 +202,11 @@ Follow conventional commit style, keep changes structured into logical commits, 
     {
       id: 'review-code', name: 'Code review (best practices)', complexity: 2,
       harness: 'llm',
-      tpl: 'Code-review the changes for: {description} against conventional best practices: correctness, clarity, naming, dead code, error handling, and diff size. Acceptance: {acceptance}. List concrete findings with file/line hints and a verdict.',
+      file: 'spec-kit/commands/checklist.md',
+      source: 'github/spec-kit',
+      tpl: `You are running the GitHub Spec Kit /checklist command to review feature quality for: {description}. ` +
+        `Follow the authoritative instruction below (verbatim) — generate and validate a requirements/implementation checklist. ` +
+        `Acceptance: {acceptance}\n\n# Official /checklist instruction\n\n{{SPEC_KIT_SOURCE}}`,
     },
     {
       id: 'review-security', name: 'Security review (OWASP)', complexity: 3,
@@ -315,6 +348,12 @@ export function templateCatalog() {
 // no prompt, return ''.
 export function resolvedStepPrompt(step, { spec } = {}) {
   if (step?.prompt != null && String(step.prompt).trim() !== '') return String(step.prompt);
+  return resolvedMethodPrompt(step, { spec });
+}
+
+// Resolve ONLY the method template prompt (ignoring any stored step.prompt) —
+// used to refresh stale materialized prompts after a template upgrade.
+export function resolvedMethodPrompt(step, { spec } = {}) {
   const resolved = resolveMethod({ ...step, _spec: spec || { title: step?.name || step?.id || 'the feature' } }, {});
   return resolved && resolved.prompt != null ? resolved.prompt : '';
 }
@@ -333,13 +372,40 @@ export function materializePrompts(steps, { spec } = {}) {
   });
 }
 
+// The RAW method template for a step (with {placeholders} visible), or '' if
+// the step is fully custom. Used to show exactly what the method prompts look
+// like before fill-in.
+export function rawTemplate(step) {
+  if (!step?.method) return '';
+  for (const list of Object.values(METHODS)) {
+    const t = list.find((x) => x.id === step.method);
+    if (t && t.tpl) return t.tpl; // raw template with {placeholders} intact
+  }
+  return '';
+}
+
 function fillTemplate(tpl, step) {
   const spec = step?._spec || {};
-  return tpl
+  // Inline any authentic methodology command/template content referenced by the
+  // method (e.g. GitHub Spec Kit's /specify, /plan command definitions).
+  if (typeof tpl === 'string' && tpl.includes('{{SPEC_KIT_SOURCE}}')) {
+    const file = methodFile(step?.method);
+    if (file) tpl = String(tpl).replace('{{SPEC_KIT_SOURCE}}', file);
+  }
+  return String(tpl || '')
     .replaceAll('{feature}', spec.title || (step?.name || 'the feature'))
-    .replaceAll('{description}', spec.description || (step?.prompt || ''))
+    .replaceAll('{description}', spec.description || '')
     .replaceAll('{acceptance}', spec.acceptance_criteria || '(not specified)')
     .replaceAll('{phase}', step?.phase || 'step');
+}
+
+function methodFile(methodId) {
+  if (!methodId) return '';
+  for (const list of Object.values(METHODS)) {
+    const t = list.find((x) => x.id === methodId);
+    if (t && t.file) return loadTemplateFile(t.file);
+  }
+  return '';
 }
 
 function guessPhase(step) {
