@@ -287,8 +287,9 @@ function VerifierList({ verifiers, onChange, models, methods }) {
 }
 
 // One editable step card.
-function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods, pipelineId, onApplyRestore }) {
+function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete, models, methods, pipelineId, onNotify }) {
   const set = (patch) => onPatch(index, patch);
+  const onApplyRestore = (text) => set({ prompt: text });
 
   return (
     <div className="step-card card">
