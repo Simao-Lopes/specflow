@@ -29,6 +29,7 @@ export function buildServer({ dbPath, port }) {
 
   // --- REST routes ---
   app.get('/health', async () => ({ ok: true, ts: new Date().toISOString() }));
+  app.get('/healt', async () => ({ ok: true }));
 
   app.get('/api/specs', async () => listSpecs());
   app.get('/api/specs/:id', async (req, rep) => {
