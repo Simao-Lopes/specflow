@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { getDb, initStore } from './store.js';
+import { getDb, initStore, defaultPipelineSteps } from './store.js';
 import { emit, EVT } from './events.js';
 import { runHarness } from '../harnesses/index.js';
 import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
@@ -33,17 +33,17 @@ export function createSpec(input) {
     repo               : input.repo || null,
     branch             : input.branch || null,
     acceptance_criteria: input.acceptance_criteria || '',
-    steps              : JSON.stringify(input.steps || defaultSteps()),
+    pipeline_id        : input.pipeline_id || 'default',
   };
-  getDb().prepare(`INSERT INTO specs (id,title,description,type,status,repo,branch,acceptance_criteria,steps)
-                   VALUES (@id,@title,@description,@type,@status,@repo,@branch,@acceptance_criteria,@steps)`).run(row);
+  getDb().prepare(`INSERT INTO specs (id,title,description,type,status,repo,branch,acceptance_criteria,pipeline_id)
+                   VALUES (@id,@title,@description,@type,@status,@repo,@branch,@acceptance_criteria,@pipeline_id)`).run(row);
   emit(EVT.SPEC_UPDATED, getSpec(id));
   return getSpec(id);
 }
 export function updateSpec(id, patch) {
   const cur = getSpec(id);
   if (!cur) throw new Error('Spec not found');
-  const fields = ['title','description','type','status','repo','branch','acceptance_criteria','steps'];
+  const fields = ['title','description','type','status','repo','branch','acceptance_criteria','pipeline_id'];
   const sets = [], vals = {};
   for (const f of fields) {
     if (patch[f] !== undefined) {
@@ -63,25 +63,79 @@ export function deleteSpec(id) {
   emit(EVT.SPEC_UPDATED, { id, deleted: true });
 }
 
-// Default pipeline when a spec has no steps: Plan then Code.
-// Code carries a verify sub-agent skeleton the team can fill in (e.g. a test).
+// ---------------------------------------------------------------------------
+// Pipelines (first-class, reusable step definitions)
+// ---------------------------------------------------------------------------
+// Default step list used as a fallback/seed.
 export function defaultSteps() {
-  return [
-    { id: 'plan', name: 'Plan', harness: 'llm', provider: 'gemini', model: 'gemini-3.5-flash-lite', iterations: 1, on_failure: 'continue', verify: [], prompt: '' },
-    { id: 'code', name: 'Code', harness: 'hermes', provider: null, model: null, iterations: 3, on_failure: 'stop', verify: [
-      { id: 'test', name: 'Test', harness: 'custom', command: '', iterations: 1, on_failure: 'stop', prompt: '' },
-    ], prompt: '' },
-  ];
+  return defaultPipelineSteps();
+}
+export function listPipelines() {
+  return getDb().prepare('SELECT * FROM pipelines ORDER BY name COLLATE NOCASE').all()
+    .map(p => ({ ...p, steps: safeParseSteps(p.steps) }));
+}
+export function getPipeline(id) {
+  const p = getDb().prepare('SELECT * FROM pipelines WHERE id=?').get(id);
+  if (!p) return p;
+  return { ...p, steps: safeParseSteps(p.steps) };
+}
+function safeParseSteps(steps) {
+  try {
+    const s = typeof steps === 'string' ? JSON.parse(steps) : steps;
+    return Array.isArray(s) ? s : defaultSteps();
+  } catch { return defaultSteps(); }
+}
+export function createPipeline(input) {
+  const id = input.id || randomUUID().slice(0, 8);
+  getDb().prepare('INSERT INTO pipelines (id,name,description,steps) VALUES (@id,@name,@description,@steps)')
+    .run({
+      id, name: input.name || 'Untitled pipeline',
+      description: input.description || '',
+      steps: JSON.stringify(Array.isArray(input.steps) ? input.steps : defaultSteps()),
+    });
+  const row = getDb().prepare('SELECT * FROM pipelines WHERE id=?').get(id);
+  emit(EVT.PIPELINE_UPDATED, row);
+  return row;
+}
+export function updatePipeline(id, patch) {
+  const cur = getPipeline(id);
+  if (!cur) throw new Error('Pipeline not found');
+  const fields = ['name','description','steps'];
+  const sets = [], vals = {};
+  for (const f of fields) {
+    if (patch[f] !== undefined) {
+      sets.push(`${f}=@${f}`);
+      vals[f] = typeof patch[f] === 'object' ? JSON.stringify(patch[f]) : patch[f];
+    }
+  }
+  if (sets.length) { vals.id = id; getDb().prepare(`UPDATE pipelines SET ${sets.join(',')}, updated_at=datetime('now') WHERE id=@id`).run(vals); }
+  const row = getPipeline(id);
+  emit(EVT.PIPELINE_UPDATED, row);
+  return row;
+}
+export function deletePipeline(id) {
+  // Re-point specs using it to the default pipeline.
+  getDb().prepare('UPDATE specs SET pipeline_id=? WHERE pipeline_id=?').run('default', id);
+  getDb().prepare('DELETE FROM pipelines WHERE id=?').run(id);
+  emit(EVT.PIPELINE_UPDATED, { id, deleted: true });
+  emit(EVT.SPEC_UPDATED, { id: '_', refetch: true });
 }
 
-export function parseSteps(spec) {
+// Resolve a spec's effective steps: from its pipeline, falling back to its own
+// legacy inline steps, then the default pipeline.
+export function stepsOf(spec) {
+  if (!spec) return [];
+  if (spec.pipeline_id) {
+    const p = getPipeline(spec.pipeline_id);
+    if (p && Array.isArray(p.steps) && p.steps.length) return p.steps;
+  }
+  // Legacy inline steps
   try {
     const s = typeof spec.steps === 'string' ? JSON.parse(spec.steps) : spec.steps;
     if (Array.isArray(s) && s.length) return s;
   } catch {}
   return defaultSteps();
 }
-export function stepsOf(spec) { return parseSteps(spec); }
 
 // ---------------------------------------------------------------------------
 // Session messages (per-spec agent interaction thread)
@@ -192,60 +246,74 @@ async function executeJob(jobId) {
   const repoRoot = resolve(getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value || './work');
   const spec = getSpec(job.spec_id);
   const steps = parseSteps(spec);
+  const idx = job.step_index || 0;   // index of the step to run now
+  if (idx >= steps.length) { finishJob(job, spec); return; }
 
   try {
     mark(jobId, 'running');
-    addLog(jobId, `🧪 Starting pipeline: ${steps.map(s => s.name).join(' → ')}`);
 
-    // One checkout shared across all steps of this job.
-    let checkout = null;
+    // One-time checkout setup only on the first (re)entry of a fresh run.
+    const checkout = job.repo
+      ? join(repoRoot, parseRepoSlug(job.repo), ...[]) // placeholder
+      : null;
+    let workdir;
     if (job.repo) {
-      addLog(jobId, `Checking out branch ${job.branch} from ${job.repo}`);
-      checkout = await prepareBranch({ repoUrl: job.repo, branch: job.branch, base: 'main', repoRoot });
-    } else {
-      checkout = join(repoRoot, '_scratch', `job-${jobId}`);
-      mkdirSync(checkout, { recursive: true });
-      addLog(jobId, 'No repo configured — working in scratch dir (no git/PR)');
-    }
-
-    // Greet agent-session thread
-    addMessage({
-      specId: spec.id, role: 'system', author: 'specflow',
-      content: `Job ${jobId} started · pipeline: ${steps.map(s => s.name).join(' → ')}`,
-      inReplyJob: jobId,
-    });
-
-    let aborted = false;
-    for (const step of steps) {
-      if (aborted) { setStep(jobId, step, { status: 'skipped' }); continue; }
-      const ok = await executeStep(job, spec, step, { checkout, repoRoot });
-      if (!ok) {
-        if (step.on_failure === 'continue') { addLog(jobId, `Step "${step.name}" failed but continuing (on_failure=continue)`); }
-        else { aborted = true; }
+      workdir = checkout(repoRoot, job.repo);
+      // Always sync branch unless this is a retry of an already-paused pipeline.
+      if (job.gate_state !== 'waiting' && job.gate_state !== 'approved') {
+        addLog(jobId, `Checking out branch ${job.branch} from ${job.repo}`);
+        await prepareBranch({ repoUrl: job.repo, branch: job.branch, base: 'main', repoRoot });
       }
+    } else {
+      workdir = join(repoRoot, '_scratch', `job-${jobId}`);
+      mkdirSync(workdir, { recursive: true });
+      if (idx === 0) addLog(jobId, 'No repo configured — working in scratch dir (no git/PR)');
     }
 
-    // Commit + PR once after the pipeline (if it reached the end with a repo).
-    if (job.repo && !aborted) {
-      addLog(jobId, 'Pipeline complete — committing changes');
-      const push = await commitAndPush({ checkout, branch: job.branch, repoUrl: job.repo, message: `[SpecFlow] ${spec.title}` });
-      if (push.changed) {
-        addLog(jobId, 'Committed & pushed');
-        const pr = await openPullRequest({ repoUrl: job.repo, branch: job.branch, base: 'main', title: `[SpecFlow] ${spec.title}`, body: spec.description });
-        if (pr) {
-          addLog(jobId, `PR opened: ${pr.url}`);
-          getDb().prepare('UPDATE jobs SET pr_url=? WHERE id=?').run(pr.url, jobId);
+    if (idx === 0) {
+      addLog(jobId, `🧪 Starting pipeline: ${steps.map(s => s.name).join(' → ')}`);
+      addMessage({ specId: spec.id, role: 'system', author: 'specflow', content: `Job ${jobId} started · pipeline: ${steps.map(s => s.name).join(' → ')}`, inReplyJob: jobId });
+    }
+
+    const step = steps[idx];
+    const ok = await executeStep(job, spec, step, { checkout: workdir, repoRoot });
+    const nextIdx = idx + 1;
+
+    if (ok) {
+      if (nextIdx < steps.length) {
+        // HUMAN GATE: pause before running the next step.
+        getDb().prepare('UPDATE jobs SET step_index=?, gate_state=\'waiting\', gate_step=? WHERE id=?')
+          .run(nextIdx, steps[nextIdx].name, jobId);
+        addLog(jobId, `⏸ Step "${step.name}" passed — awaiting human approval to proceed to "${steps[nextIdx].name}"`);
+        addMessage({ specId: spec.id, role: 'system', author: 'specflow',
+          content: `Gate at "${step.name}" (passed). Waiting for human approval before "${steps[nextIdx].name}".`, inReplyJob: jobId });
+        mark(jobId, 'gated');
+        return; // paused; resumes on human gate
+      } else {
+        await finishJob(job, spec, { workdir, steps });
+        return;
+      }
+    } else {
+      // Step failed.
+      if (step.on_failure === 'continue') {
+        if (nextIdx < steps.length) {
+          getDb().prepare('UPDATE jobs SET step_index=?, gate_state=\'waiting\', gate_step=? WHERE id=?')
+            .run(nextIdx, steps[nextIdx].name, jobId);
+          addLog(jobId, `⚠ Step "${step.name}" failed (on_failure=continue) — awaiting human to proceed to "${steps[nextIdx].name}"`);
+          addMessage({ specId: spec.id, role: 'system', author: 'specflow',
+            content: `Step "${step.name}" FAILED but pipeline continues. Awaiting human gate for "${steps[nextIdx].name}".`, inReplyJob: jobId });
+          mark(jobId, 'gated');
+          return;
         }
+        // last step failed-continue => finish as done w/ note
+        addMessage({ specId: spec.id, role: 'system', author: 'specflow', content: `Job ${jobId}: final step "${step.name}" failed (continue).`, inReplyJob: jobId });
+        mark(jobId, 'failed');
+        updateSpec(spec.id, { status: 'review' });
+        return;
       }
-      updateSpec(spec.id, { status: 'review' });
-    } else if (aborted) {
+      mark(jobId, 'failed');
       updateSpec(spec.id, { status: 'backlog' });
-    } else {
-      updateSpec(spec.id, { status: aborted ? 'backlog' : 'review' });
     }
-
-    addMessage({ specId: spec.id, role: 'system', author: 'specflow', content: `Job ${jobId} finished (${aborted ? 'aborted after step failure' : 'ok'}).`, inReplyJob: jobId });
-    mark(jobId, aborted ? 'failed' : 'succeeded');
   } catch (e) {
     const err = e?.message || String(e);
     addLog(jobId, `FAILED: ${err}`, 'error');
@@ -254,6 +322,78 @@ async function executeJob(jobId) {
     mark(jobId, 'failed');
     updateSpec(spec.id, { status: 'backlog' });
   }
+}
+
+// Commit, open a PR (never merges), and mark the job done after the final step.
+async function finishJob(job, spec, { workdir } = {}) {
+  try {
+    if (job.repo) {
+      addLog(job.id, 'Pipeline complete — committing changes');
+      const push = await commitAndPush({ checkout: workdir, branch: job.branch, repoUrl: job.repo, message: `[SpecFlow] ${spec.title}` });
+      if (push.changed) {
+        addLog(job.id, 'Committed & pushed');
+        const pr = await openPullRequest({ repoUrl: job.repo, branch: job.branch, base: 'main', title: `[SpecFlow] ${spec.title}`, body: spec.description });
+        if (pr) {
+          addLog(job.id, `PR opened: ${pr.url}`);
+          getDb().prepare('UPDATE jobs SET pr_url=? WHERE id=?').run(pr.url, job.id);
+        }
+      }
+    }
+    addMessage({ specId: spec.id, role: 'system', author: 'specflow', content: `Job ${job.id} completed successfully.`, inReplyJob: job.id });
+    mark(job.id, 'succeeded');
+    updateSpec(spec.id, { status: 'review' });
+  } catch (e) {
+    addLog(job.id, `Finalize error (job already completed steps): ${e?.message}`, 'error');
+    mark(job.id, 'succeeded');
+    updateSpec(spec.id, { status: 'review' });
+  }
+}
+
+// Resolve a repo URL to its local checkout path.
+function checkout(repoRoot, repoUrl) {
+  // e.g. https://github.com/owner/name.git -> <repoRoot>/owner/name
+  const m = String(repoUrl).match(/(?:github\.com[/:]|^)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+  if (!m) return join(repoRoot, '_repos', Buffer.from(repoUrl).toString('hex').slice(0, 16));
+  return join(repoRoot, m[1], m[2]);
+}
+function parseRepoSlug(repoUrl) { return checkout('', repoUrl); }
+
+// Human gate decision (approve / reject / retry).
+export async function gateJob(jobId, action, note = '') {
+  const job = getJob(jobId);
+  if (!job) throw new Error('Job not found');
+  if (job.gate_state !== 'waiting') throw new Error('No pending gate on this job');
+
+  if (action === 'approve') {
+    getDb().prepare('UPDATE jobs SET gate_state=? WHERE id=?').run('approved', jobId);
+    addLog(jobId, `✅ Gate approved — proceeding to step "${job.gate_step}"`);
+    addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Approve next step: ${job.gate_step}${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    mark(jobId, 'running');
+    runner.enqueue(jobId);           // resume: execute steps[job.step_index]
+    return getJob(jobId);
+  }
+
+  if (action === 'reject') {
+    getDb().prepare('UPDATE jobs SET gate_state=? WHERE id=?').run('rejected', jobId);
+    addLog(jobId, `⛔ Gate rejected by human${note ? ': ' + note : ''}`, 'warn');
+    addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Reject pipeline at "${job.gate_step}"${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    mark(jobId, 'failed');
+    updateSpec(job.spec_id, { status: 'backlog' });
+    return getJob(jobId);
+  }
+
+  if (action === 'retry') {
+    // Re-run the step that just produced this gate.
+    const redoIdx = Math.max(0, (job.step_index || 1) - 1);
+    getDb().prepare('UPDATE jobs SET step_index=?, gate_state=? WHERE id=?').run(redoIdx, 'retrying', jobId);
+    addLog(jobId, `↻ Human requested retry of step at index ${redoIdx}`);
+    addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Retry step "${job.gate_step}"${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    mark(jobId, 'running');
+    runner.enqueue(jobId);
+    return getJob(jobId);
+  }
+
+  throw new Error('Unknown gate action');
 }
 
 // Run one pipeline step, honouring its verify sub-agents and iteration budget.

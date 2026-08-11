@@ -6,6 +6,7 @@ bus.setMaxListeners(100) ;
 
 export const EVT = {
   SPEC_UPDATED   : 'spec:updated',
+  PIPELINE_UPDATED : 'pipeline:updated',
   JOB_UPDATED    : 'job:updated',
   JOB_LOG        : 'job:log',
   JOB_STEP       : 'job:step',

@@ -9,8 +9,9 @@ import { dirname, join } from 'node:path';
 import {
   listSpecs, getSpec, createSpec, updateSpec, deleteSpec,
   listAgents, upsertAgent, deleteAgent,
-  listJobs, getJob, jobLogs, jobSteps, runJob,
+  listJobs, getJob, jobLogs, jobSteps, runJob, gateJob,
   listMessages, addMessage, stepsOf,
+  listPipelines, getPipeline, createPipeline, updatePipeline, deletePipeline,
 } from '../core/core.js';
 import { on, EVT } from '../core/events.js';
 import { initStore } from '../core/store.js';
@@ -45,18 +46,18 @@ export function buildServer({ dbPath, port }) {
   app.put('/api/agents', async (req) => upsertAgent(req.body));
   app.delete('/api/agents/:id', async (req) => { deleteAgent(req.params.id); return { ok: true }; });
 
-  // Steps for a spec
+  // Pipelines (dedicated, reusable step definitions)
+  app.get('/api/pipelines', async () => listPipelines());
+  app.get('/api/pipelines/:id', async (req, rep) => getPipeline(req.params.id) ?? rep.code(404).send({ error: 'not found' }));
+  app.post('/api/pipelines', async (req) => createPipeline(req.body));
+  app.patch('/api/pipelines/:id', async (req) => updatePipeline(req.params.id, req.body));
+  app.delete('/api/pipelines/:id', async (req) => { deletePipeline(req.params.id); return { ok: true }; });
+
+  // A spec resolves its pipeline's steps (read-only here; editing happens in the Pipelines builder).
   app.get('/api/specs/:id/steps', async (req) => {
     const s = getSpec(req.params.id);
     if (!s) return { error: 'not found' };
     return stepsOf(s);
-  });
-  // Save full steps pipeline (validated client-side) — accepts array or {steps:[...]}
-  app.put('/api/specs/:id/steps', async (req) => {
-    const pipe = Array.isArray(req.body) ? req.body : req.body?.steps;
-    if (!Array.isArray(pipe)) return { error: 'steps must be an array' };
-    const saved = updateSpec(req.params.id, { steps: pipe });
-    return stepsOf(saved);
   });
 
   // Per-spec agent-session messages (interact with the agent)
@@ -70,8 +71,10 @@ export function buildServer({ dbPath, port }) {
   app.get('/api/jobs/:id', async (req) => getJob(req.params.id));
   app.get('/api/jobs/:id/logs', async (req) => jobLogs(req.params.id, { limit: req.query.limit }));
   app.get('/api/jobs/:id/steps', async (req) => jobSteps(req.params.id));
+  // Human gate decision on a paused job.
+  app.post('/api/jobs/:id/gate', async (req) => gateJob(req.params.id, req.body?.action, req.body?.note || ''));
   app.post('/api/specs/:id/run', async (req) => {
-    const jobId = await runJob({ specId: req.params.id, ...(req.body || {}) });
+    const jobId = await runJob({ specId: req.params.id });
     return { jobId };
   });
 
@@ -101,6 +104,7 @@ export function buildServer({ dbPath, port }) {
     const mk = (event, tx) => subs.push(on(event, payload => tx(payload)));
 
     mk(EVT.SPEC_UPDATED, p => socket.emit('spec', p));
+    mk(EVT.PIPELINE_UPDATED, p => socket.emit('pipeline', p));
     mk(EVT.JOB_UPDATED, p => socket.emit('job', p));
     mk(EVT.JOB_LOG, p => { if (socket.jobFilters?.includes(p.jobId) || !socket.jobFilters?.length) socket.emit('log', p); });
     mk(EVT.JOB_STEP, p => { if (socket.jobFilters?.includes(p.job_id) || !socket.jobFilters?.length) socket.emit('step', p); });

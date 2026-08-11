@@ -33,6 +33,15 @@ function migrate() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS pipelines (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      steps TEXT,                          -- JSON array of steps
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       spec_id TEXT NOT NULL,
@@ -98,9 +107,15 @@ function migrate() {
     );
   `);
 
-  // Migrate existing DBs that predate the steps column
+  // Migrate existing DBs that predate the steps column / gate columns
   const cols = db.prepare('PRAGMA table_info(specs)').all().map(c => c.name);
   if (!cols.includes('steps')) db.exec('ALTER TABLE specs ADD COLUMN steps TEXT');
+  if (!cols.includes('pipeline_id')) db.exec('ALTER TABLE specs ADD COLUMN pipeline_id TEXT');
+
+  const jcols = db.prepare('PRAGMA table_info(jobs)').all().map(c => c.name);
+  if (!jcols.includes('step_index')) db.exec('ALTER TABLE jobs ADD COLUMN step_index INTEGER DEFAULT 0');
+  if (!jcols.includes('gate_step')) db.exec('ALTER TABLE jobs ADD COLUMN gate_step TEXT');
+  if (!jcols.includes('gate_state')) db.exec("ALTER TABLE jobs ADD COLUMN gate_state TEXT DEFAULT 'none'");
 
   // Seed default config
   const cfg = getDb();
@@ -108,4 +123,22 @@ function migrate() {
      .run('primary_channel', 'rest');
   cfg.prepare('INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)')
      .run('repo_root', process.env.SPECFLOW_REPO_ROOT ? resolve(process.env.SPECFLOW_REPO_ROOT) : resolve('./work'));
+
+  // Seed a default pipeline if none exists (reused by specs with no explicit pipeline).
+  const existing = cfg.prepare('SELECT COUNT(*) AS n FROM pipelines').get().n;
+  if (existing === 0) {
+    const dp = JSON.stringify(defaultPipelineSteps());
+    cfg.prepare('INSERT INTO pipelines (id,name,description,steps) VALUES (?,?,?,?)')
+       .run('default', 'Default (Plan → Code)', 'Plan then implement, with a Test verifier that iterates.', dp);
+  }
+}
+
+// Canonical default pipeline steps (Plan -> Code, Code gated by a Test verifier).
+export function defaultPipelineSteps() {
+  return [
+    { id: 'plan', name: 'Plan', harness: 'llm', provider: 'gemini', model: 'gemini-3.5-flash-lite', iterations: 1, on_failure: 'continue', verify: [], prompt: '' },
+    { id: 'code', name: 'Code', harness: 'hermes', provider: null, model: null, iterations: 3, on_failure: 'stop', verify: [
+      { id: 'test', name: 'Test', harness: 'custom', command: '', iterations: 1, on_failure: 'stop', prompt: '' },
+    ], prompt: '' },
+  ];
 }
