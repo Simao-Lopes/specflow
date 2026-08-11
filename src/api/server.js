@@ -20,6 +20,7 @@ import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, get
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
 import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
 import { templateCatalog, listCustomActions, PHASE_LABELS, resolvedStepPrompt, rawTemplate } from '../methods/catalog.js';
+import { HARNESS_LIST, HARNESS_META } from '../harnesses/index.js';
 import {
   getSettings, updateSettings, jobDefaults,
   listConnections, addConnection, updateConnection, deleteConnection, testConnection,
@@ -65,14 +66,18 @@ export function buildServer({ dbPath, port }) {
   // Methods library — industry templates (simplest→complex) + custom actions
   // defined in <repoRoot>/.specflow/actions/<phase>/.
   app.get('/api/methods', async () => {
-    const rr = getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value;
+    const rr = getDb().prepare('SELECT value FROM config WHERE key=?').get('repo_root')?.value || './work';
     return {
       phases      : PHASE_LABELS,
       templates   : templateCatalog(),
       custom      : listCustomActions({ repoRoot: rr }),
+      harnesses   : HARNESS_LIST.map((id) => ({ id, label: HARNESS_META[id]?.label || id, description: HARNESS_META[id]?.description || '' })),
       repoRoot    : rr,
     };
   });
+
+  // Agent harnesses (CLI coding agents) — list + metadata for UI dropdowns.
+  app.get('/api/harnesses', async () => HARNESS_LIST.map((id) => ({ id, label: HARNESS_META[id]?.label || id, description: HARNESS_META[id]?.description || '' })));
 
   // Pipelines (dedicated, reusable step definitions)
   app.get('/api/pipelines', async () => listPipelines());

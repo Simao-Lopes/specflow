@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../api.js';
 
-const HARNESSES = ['custom', 'hermes', 'claude', 'llm'];
+const HARNESSES = ['custom', 'hermes', 'claude', 'llm', 'opencode', 'codex', 'gemini', 'aider', 'qwen-code', 'github-copilot'];
 const PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
 
 const DEFAULT_SETTINGS = {

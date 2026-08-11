@@ -94,8 +94,9 @@ export const api = {
   savePromptVersion: (pid, sid, body) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions`, { method: 'POST', body }),
   restorePromptVersion: (pid, sid, version) => request(`/api/pipelines/${pid}/steps/${sid}/prompt-versions/restore/${encodeURIComponent(version)}`, { method: 'POST' }),
 
-  // Method library: industry templates + custom actions for pipeline steps.
+  // Method library: industry templates + custom actions + harnesses for pipeline steps.
   getMethods: () => request('/api/methods'),
+  getHarnesses: () => request('/api/harnesses'),
 };
 
 export default api;

@@ -1,32 +1,25 @@
-// Agent harness abstraction. Each harness knows how to take a task (a job step)
-// and execute it against a checkout. Implementations are pluggable:
-//   - 'hermes'  : drives a Hermes Agent headless (hermes chat -q)
-//   - 'claude'  : Claude Code CLI
-//   - 'custom'  : arbitrary shell command / script
-//   - 'llm'     : direct completion (no code agent)
-// A job carries `step` (its own name/prompt), `feedback` (prior verify results),
-// and `lifecycle` (work | verify) so harnesses build a step-aware prompt.
+// Agent harness abstraction.
+//
+// Each harness knows how to take a task (a job step) and execute it against a
+// checkout using a CLI coding agent. Harnesses are table-driven: a declarative
+// registry of the common coding-agent CLIs. Each entry gives the binary, how to
+// build its argv, and a human description (used by the UI dropdown).
+//
+//   claude    : Claude Code CLI
+//   hermes    : Hermes Agent headless
+//   opencode  : OpenCode CLI
+//   codex     : OpenAI Codex CLI
+//   gemini    : Google Gemini CLI
+//   aider     : Aider (pair-programming CLI)
+//   qwen-code : Qwen Code CLI
+//   github-copilot : GitHub Copilot CLI
+//   custom    : arbitrary shell command / script
+//   llm       : direct completion (no code agent)
 
 import { spawn } from 'node:child_process';
 import { emit, EVT } from '../core/events.js';
 
-export async function runHarness(job, context) {
-  const harnessId = (job.harness || 'custom').toLowerCase();
-  const impl = HARNESSES[harnessId] || HARNESSES.custom;
-  return impl.run(job, context);
-}
-
-async function streamProc(cmd, args, { cwd, jobId, env = {} }) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env }, shell: false });
-    let out = '';
-    child.stdout.on('data', d => { const line = d.toString(); out += line; emit(EVT.JOB_LOG, { jobId, level: 'info', message: line.trim() }); });
-    child.stderr.on('data', d => { const line = d.toString(); emit(EVT.JOB_LOG, { jobId, level: 'warn', message: line.trim() }); });
-    child.on('error', reject);
-    child.on('close', code => { if (code === 0) resolve({ code, output: out, messages: out.trim() }); else reject(new Error(`Harness exited with code ${code}\n${out}`)); });
-  });
-}
-
+// --- shared prompt builder (same across all CLI harnesses) ---
 async function buildPrompt(context, job) {
   const spec = context.spec;
   const step = job.step || {};
@@ -48,14 +41,11 @@ async function buildPrompt(context, job) {
     parts.push('Please complete this step, keep changes minimal and conventional, and report what you did.');
   }
   if (job.feedback) parts.push(`\nFEEDBACK FROM PREVIOUS ATTEMPT:\n${job.feedback}`);
-  // Inject conversation guidance (user messages) so the agent stays on course.
   const guidance = await recentGuidance(context, spec.id);
   if (guidance) parts.push(`\nHUMAN GUIDANCE FROM THE SPEC THREAD:\n${guidance}`);
   return parts.join('\n');
 }
 
-// Pull the latest human/system notes for the spec thread so the agent session
-// stays aligned with the team's messages.
 async function recentGuidance(context, specId) {
   try {
     const { getDb } = await import('../core/store.js');
@@ -65,28 +55,114 @@ async function recentGuidance(context, specId) {
   } catch { return null; }
 }
 
-const HARNESSES = {
-  // Hermes headless: 'hermes chat -q "<prompt>"' executed in the checkout.
-  hermes: {
-    async run(job, context) {
-      const prompt = await buildPrompt(context, job);
-      const args = ['chat', '-q', prompt];
-      if (job.model) args.push('-m', job.model);
-      return streamProc(process.env.HERMES_BIN || 'hermes', args, { cwd: context.checkout, jobId: job.id });
+async function runProc(cmd, args, { cwd, jobId, env = {} }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env }, shell: false });
+    let out = '';
+    child.stdout.on('data', d => { const line = d.toString(); out += line; emit(EVT.JOB_LOG, { jobId, level: 'info', message: line.trim() }); });
+    child.stderr.on('data', d => { const line = d.toString(); emit(EVT.JOB_LOG, { jobId, level: 'warn', message: line.trim() }); });
+    child.on('error', reject);
+    child.on('close', code => { if (code === 0) resolve({ code, output: out, messages: out.trim() }); else reject(new Error(`Harness exited with code ${code}\n${out}`)); });
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Declarative harness definitions.
+// Each craft(argv, job) returns the argv array to run the CLI with the prompt.
+// `bin` may be overridden per-env (e.g. OPENCODE_BIN).
+// -----------------------------------------------------------------------------
+export const HARNESSES = {
+  claude: {
+    label: 'Claude Code',
+    description: 'Claude Code CLI — brings its own auth, zero setup.',
+    bin: () => process.env.CLAUDE_BIN || 'claude',
+    craft(prompt, job) {
+      const args = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'text'];
+      if (job.model) args.push('--model', job.model);
+      return args;
     },
   },
 
-  claude: {
-    async run(job, context) {
-      const prompt = await buildPrompt(context, job);
-      const args = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'text'];
+  hermes: {
+    label: 'Hermes Agent',
+    description: 'Hermes Agent headless (hermes chat -q).',
+    bin: () => process.env.HERMES_BIN || 'hermes',
+    craft(prompt, job) {
+      const args = ['chat', '-q', prompt];
+      if (job.model) args.push('-m', job.model);
+      return args;
+    },
+  },
+
+  opencode: {
+    label: 'OpenCode',
+    description: 'OpenCode CLI, open-source coding agent.',
+    bin: () => process.env.OPENCODE_BIN || 'opencode',
+    craft(prompt, job) {
+      const args = ['run', prompt, '--yes', '--no-notifications'];
       if (job.model) args.push('--model', job.model);
-      return streamProc('claude', args, { cwd: context.checkout, jobId: job.id });
+      return args;
+    },
+  },
+
+  codex: {
+    label: 'OpenAI Codex',
+    description: 'OpenAI Codex CLI (codex).',
+    bin: () => process.env.CODEX_BIN || 'codex',
+    craft(prompt, job) {
+      const args = ['exec', '--skip-git-repo-check', '--yes', '--json', prompt];
+      if (job.model) args.push('--model', job.model);
+      return args;
+    },
+  },
+
+  gemini: {
+    label: 'Gemini CLI',
+    description: 'Google Gemini CLI (gemini).',
+    bin: () => process.env.GEMINI_BIN || 'gemini',
+    craft(prompt, job) {
+      const args = ['-p', prompt];
+      if (job.model) args.push('--model', job.model);
+      return args;
+    },
+  },
+
+  aider: {
+    label: 'Aider',
+    description: 'Aider — AI pair programming CLI.',
+    bin: () => process.env.AIDER_BIN || 'aider',
+    craft(prompt, job) {
+      const args = ['--message', prompt, '--yes-always', '--no-check-update', '--no-git', '--no-auto-commits'];
+      if (job.model) args.push('--model', job.model);
+      return args;
+    },
+  },
+
+  'qwen-code': {
+    label: 'Qwen Code',
+    description: 'Qwen Code CLI (qwen-code).',
+    bin: () => process.env.QWEN_CODE_BIN || 'qwen-code',
+    craft(prompt, job) {
+      const args = ['--headless', prompt, '--yes'];
+      if (job.model) args.push('--model', job.model);
+      return args;
+    },
+  },
+
+  // GitHub Copilot CLI. Interactive by nature; run in print mode ('copilot -p').
+  'github-copilot': {
+    label: 'GitHub Copilot CLI',
+    description: 'GitHub Copilot CLI (copilot -p "…").',
+    bin: () => process.env.COPILOT_BIN || 'copilot',
+    craft(prompt) {
+      return ['-p', prompt];
     },
   },
 
   // Custom: job.step.command (or config.custom_command) templated with placeholders.
   custom: {
+    label: 'Custom',
+    description: 'Arbitrary shell command / script.',
     async run(job, context) {
       const cmd = job.step?.command || job.harness_config?.command || context.config?.custom_command;
       if (!cmd) throw new Error('Custom harness requires a `command` on the step (or custom_command in config)');
@@ -98,12 +174,14 @@ const HARNESSES = {
         .replaceAll('{prompt_file}', promptPath)
         .replaceAll('{branch}', job.branch || '')
         .replaceAll('{job_id}', job.id);
-      return streamProc('/bin/bash', ['-c', rendered], { cwd: context.checkout, jobId: job.id });
+      return runProc('/bin/bash', ['-c', rendered], { cwd: context.checkout, jobId: job.id });
     },
   },
 
   // Direct LLM call — useful for planning, review, and lightweight verify steps.
   llm: {
+    label: 'Direct LLM',
+    description: 'Direct completion (no code agent) — good for plan/review.',
     async run(job, context) {
       const { chatComplete } = await import('../llm/providers.js');
       const prompt = await buildPrompt(context, job);
@@ -114,7 +192,6 @@ const HARNESSES = {
         config: context.config,
       });
       emit(EVT.JOB_LOG, { jobId: job.id, level: 'info', message: out.slice(0, 1200) });
-      // Allow verify steps to pass/fail by inspecting output markers.
       if (job.lifecycle === 'verify') {
         const fail = /FAIL(?:\s|:|\()/i.test(out) && !/PASS/i.test(out);
         if (fail) throw new Error('Verification failed (LLM reported failure): ' + out.slice(0, 300));
@@ -124,4 +201,26 @@ const HARNESSES = {
   },
 };
 
+// Build the generic CLI runner for coprocessor harnesses (claude, codex, …).
+for (const [id, def] of Object.entries(HARNESSES)) {
+  if (def.craft && !def.run) {
+    def.run = async function run(job, context) {
+      const prompt = await buildPrompt(context, job);
+      const argv = def.craft(prompt, job);
+      const bin = def.bin();
+      // The model may be the first-arg style (e.g. codex passes --model) — handled in craft.
+      return runProc(bin, argv, { cwd: context.checkout, jobId: job.id });
+    };
+  }
+}
+
+export async function runHarness(job, context) {
+  const harnessId = (job.harness || 'custom').toLowerCase();
+  const impl = HARNESSES[harnessId] || HARNESSES.custom;
+  return impl.run(job, context);
+}
+
 export const HARNESS_LIST = Object.keys(HARNESSES);
+export const HARNESS_META = Object.fromEntries(
+  Object.entries(HARNESSES).map(([id, d]) => [id, { label: d.label, description: d.description }])
+);

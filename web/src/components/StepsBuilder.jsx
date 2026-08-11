@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import PromptEditor from './PromptEditor.jsx';
 
-const STEP_HARNESSES = ['custom', 'hermes', 'claude', 'llm'];
+const STEP_HARNESSES_FALLBACK = ['custom', 'hermes', 'claude', 'llm', 'opencode', 'codex', 'gemini', 'aider', 'qwen-code', 'github-copilot'];
+
+// Harness options for dropdowns. Uses the backend's harness catalog (id+label)
+// when available, else a sensible static fallback.
+function harnessOptions(methods) {
+  if (methods && Array.isArray(methods.harnesses) && methods.harnesses.length) {
+    return methods.harnesses.map((h) => ({ id: h.id, label: h.label || h.id }));
+  }
+  return STEP_HARNESSES_FALLBACK.map((id) => ({ id, label: id }));
+}
 const STEP_PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
 
 let _seq = 0;
@@ -244,7 +253,7 @@ function VerifierList({ verifiers, onChange, models, methods }) {
             <div className="row">
               <Field label="Harness">
                 <select className="input" value={v.harness} onChange={(e) => setVerifier(i, { harness: e.target.value })}>
-                  {STEP_HARNESSES.map((h) => <option key={h} value={h}>{h}</option>)}
+                  {harnessOptions(methods).map((h) => <option key={h.id} value={h.id}>{h.label}</option>)}
                 </select>
               </Field>
               <Field label="On failure">
@@ -337,7 +346,7 @@ function StepCard({ step, index, count, onPatch, onMoveUp, onMoveDown, onDelete,
           <div className="row">
             <Field label="Harness">
               <select className="input" value={step.harness} onChange={(e) => set({ harness: e.target.value })}>
-                {STEP_HARNESSES.map((h) => <option key={h} value={h}>{h}</option>)}
+                {harnessOptions(methods).map((h) => <option key={h.id} value={h.id}>{h.label}</option>)}
               </select>
             </Field>
             <Field label="On failure">
