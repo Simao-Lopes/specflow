@@ -20,7 +20,7 @@ import { registerChannel, listChannels, setChannelEnabled, isChannelEnabled, get
 import { initWhatsAppChannel } from '../channels/whatsapp.js';
 import { MODEL_CATALOG, PROVIDER_LIST } from '../llm/providers.js';
 import { templateCatalog, listCustomActions, PHASE_LABELS, resolvedStepPrompt, rawTemplate } from '../methods/catalog.js';
-import { HARNESS_LIST, HARNESS_META } from '../harnesses/index.js';
+import { HARNESS_LIST, HARNESS_META, checkAvailability } from '../harnesses/index.js';
 import {
   getSettings, updateSettings, jobDefaults,
   listConnections, addConnection, updateConnection, deleteConnection, testConnection,
@@ -77,7 +77,9 @@ export function buildServer({ dbPath, port }) {
   });
 
   // Agent harnesses (CLI coding agents) — list + metadata for UI dropdowns.
-  app.get('/api/harnesses', async () => HARNESS_LIST.map((id) => ({ id, label: HARNESS_META[id]?.label || id, description: HARNESS_META[id]?.description || '' })));
+  app.get('/api/harnesses', async () => HARNESS_LIST.map((id) => ({ id, label: HARNESS_META[id]?.label || id, description: HARNESS_META[id]?.description || '' }) ));
+  // Availability probe: which CLI binaries are installed on the server.
+  app.get('/api/harnesses/availability', async () => checkAvailability());
 
   // Pipelines (dedicated, reusable step definitions)
   app.get('/api/pipelines', async () => listPipelines());

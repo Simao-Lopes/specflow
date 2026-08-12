@@ -244,6 +244,21 @@ export default function Config({ config, onNotify, onChanged }) {
     } catch (err) { onNotify(err.message, 'error'); }
   };
 
+  // Harness availability on the server.
+  const [harnessAvail, setHarnessAvail] = useState([]);
+  const [availLoading, setAvailLoading] = useState(false);
+
+  const refreshHarnessAvail = useCallback(async () => {
+    setAvailLoading(true);
+    try {
+      const list = await api.harnessAvailability();
+      setHarnessAvail(Array.isArray(list) ? list : []);
+    } catch (e) { setHarnessAvail([]); }
+    finally { setAvailLoading(false); }
+  }, []);
+
+  useEffect(() => { refreshHarnessAvail(); }, [refreshHarnessAvail]);
+
   const refreshMcps = useCallback(async () => {
     setMcpLoading(true);
     try {
@@ -422,6 +437,36 @@ export default function Config({ config, onNotify, onChanged }) {
           </button>
         </div>
       </form>
+
+      {/* ---------- Harness availability ---------- */}
+      <div className="view-head section-head-inline">
+        <h3 className="section-title-standalone">Harnesses <span className="muted small">(CLI availability on server)</span></h3>
+        <button className="btn small ghost" disabled={availLoading} onClick={refreshHarnessAvail}>
+          {availLoading ? '…' : 'Refresh'}
+        </button>
+      </div>
+      <div className="card config-card conns-card">
+        {availLoading && !harnessAvail.length ? (
+          <p className="muted">Probing installed CLIs…</p>
+        ) : (
+          <div className="conns-list">
+            {harnessAvail.map((h) => (
+              <div key={h.id} className="conn-row">
+                <div className="conn-main">
+                  <span className="config-name">{h.label}</span>
+                  <span className="mono small muted conn-url">bin: {h.binary}</span>
+                  {h.available && h.version && <span className="chip small mono">{h.version}</span>}
+                </div>
+                <div className="conn-actions">
+                  {h.available
+                    ? <span className="badge status-success">✓ installed</span>
+                    : <span className="badge status-failed">✗ not found</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ---------- Git Connections ---------- */}
       <div className="view-head section-head-inline">

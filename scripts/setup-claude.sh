@@ -51,6 +51,20 @@ console.log('  ✓ seeded pipelines (incl. "Claude Code (all steps)")');
 EOF
 
 echo ""
+echo "▶ Available coding-agent CLIs on this server:"
+node --input-type=module <<'EOF'
+import { checkAvailability } from './src/harnesses/index.js';
+const a = await checkAvailability();
+const cli = a.filter(x => x.binary && x.binary !== '—');
+for (const x of cli) {
+  const mark = x.available ? '✓' : '✗';
+  console.log(`  ${mark} ${x.label.padEnd(18)} ${x.binary}${x.version ? '  ('+x.version+')' : ''}`);
+}
+const missing = a.filter(x => x.available === false);
+if (missing.length) console.log(`\n  (install ones you want: ${missing.map(x=>x.binary).join(', ')})`);
+EOF
+
+echo ""
 echo "🎉 Done! Start it:"
 echo "    npm start"
 echo "    → http://localhost:9120/ui/"

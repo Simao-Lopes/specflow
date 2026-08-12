@@ -224,3 +224,41 @@ export const HARNESS_LIST = Object.keys(HARNESSES);
 export const HARNESS_META = Object.fromEntries(
   Object.entries(HARNESSES).map(([id, d]) => [id, { label: d.label, description: d.description }])
 );
+
+// ---- Availability probe ----
+// For each CLI harness, determine whether the binary resolves on the server
+// (either via its <NAME>_BIN env override or on PATH). Uses `which` for PATH
+// resolution. Returns { id, label, binary, available, version? }.
+export async function checkAvailability() {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const runs = promisify(execFile);
+  const which = async (bin) => {
+    try { await runs('which', [bin], { env: process.env }); return true; } catch { return false; }
+  };
+  const version = async (bin) => {
+    try {
+      const { stdout } = await runs(bin, ['--version'], { timeout: 6000, env: process.env });
+      return String(stdout || '').trim().slice(0, 40);
+    } catch { return ''; }
+  };
+
+  const out = [];
+  for (const [id, def] of Object.entries(HARNESSES)) {
+    if (!def.bin) { out.push({ id, label: def.label, binary: '—', available: true, note: 'built-in' }); continue; }
+    const bin = def.bin();
+    const available = await which(bin.split(/\s+/)[0]);
+    out.push({
+      id, label: def.label, binary: bin, available,
+      overridden: !!binEnvVar(id),
+      version: available ? await version(bin.split(/\s+/)[0]) : '',
+    });
+  }
+  return out;
+}
+
+function binEnvVar(id) {
+  const map = { claude: 'CLAUDE_BIN', hermes: 'HERMES_BIN', opencode: 'OPENCODE_BIN', codex: 'CODEX_BIN', gemini: 'GEMINI_BIN', aider: 'AIDER_BIN', 'qwen-code': 'QWEN_CODE_BIN', 'github-copilot': 'COPILOT_BIN' };
+  const varName = map[id];
+  return varName ? !!process.env[varName] : false;
+}

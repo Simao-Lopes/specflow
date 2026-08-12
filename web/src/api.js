@@ -97,6 +97,7 @@ export const api = {
   // Method library: industry templates + custom actions + harnesses for pipeline steps.
   getMethods: () => request('/api/methods'),
   getHarnesses: () => request('/api/harnesses'),
+  harnessAvailability: () => request('/api/harnesses/availability'),
 };
 
 export default api;

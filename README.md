@@ -112,6 +112,27 @@ Then in the UI: **New Spec** → repo → pipeline **"Claude Code (all steps)"**
 
 ---
 
+## Bootstrap scripts (pick your agent)
+
+One command each — the script installs deps, writes a matching `.env`, sets the default harness/provider/model, seeds pipelines, and prints which coding-agent CLIs are installed on the server.
+
+| Script | Set-up | Cost / keys |
+|--------|--------|-------------|
+| `scripts/setup-claude.sh myorg/myapp` | Claude Code | `claude` CLI, own auth |
+| `scripts/setup-ollama.sh myorg/myapp ./work qwen3:14b` | Ollama (fully local) | `ollama` + a pulled model, **no keys** |
+| `scripts/setup-gemini.sh myorg/myapp <GOOGLE_API_KEY>` | Gemini | one `GOOGLE_API_KEY` |
+
+```bash
+# e.g. Claude-only
+bash scripts/setup-claude.sh myorg/myapp
+npm start     # → http://localhost:9120/ui/
+```
+
+Supported harnesses (each must be installed on the server; `<NAME>_BIN` overrides the binary):
+**claude · hermes · opencode · codex · gemini · aider · qwen-code · github-copilot · custom · llm**. Check what's installed in **Config → Harnesses**.
+
+---
+
 ## Connecting tools (MCP)
 
 MCP (Model Context Protocol) lets pipeline agents call real tools. Add a server under **Config → MCP Connections**; every configured MCP is exposed to every node.
