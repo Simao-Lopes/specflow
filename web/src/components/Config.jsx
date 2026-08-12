@@ -460,7 +460,21 @@ export default function Config({ config, onNotify, onChanged }) {
                 <div className="conn-actions">
                   {h.available
                     ? <span className="badge status-success">✓ installed</span>
-                    : <span className="badge status-failed">✗ not found</span>}
+                    : (
+                      <>
+                        <span className="badge status-failed">✗ not found</span>
+                        {h.install && (
+                          <button
+                            type="button"
+                            className="btn small ghost"
+                            title={h.install}
+                            onClick={() => { navigator.clipboard?.writeText(h.install); onNotify(`Install command copied for ${h.label}`, 'success'); }}
+                          >
+                            Copy install
+                          </button>
+                        )}
+                      </>
+                    )}
                 </div>
               </div>
             ))}

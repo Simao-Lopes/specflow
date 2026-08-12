@@ -75,6 +75,7 @@ export const HARNESSES = {
   claude: {
     label: 'Claude Code',
     description: 'Claude Code CLI — brings its own auth, zero setup.',
+    install: 'npm install -g @anthropic-ai/claude-code',
     bin: () => process.env.CLAUDE_BIN || 'claude',
     craft(prompt, job) {
       const args = ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'text'];
@@ -86,6 +87,7 @@ export const HARNESSES = {
   hermes: {
     label: 'Hermes Agent',
     description: 'Hermes Agent headless (hermes chat -q).',
+    install: 'curl -LsSf https://hermes-agent.nousresearch.com/install.sh | sh || pipx install hermes-agent',
     bin: () => process.env.HERMES_BIN || 'hermes',
     craft(prompt, job) {
       const args = ['chat', '-q', prompt];
@@ -97,6 +99,7 @@ export const HARNESSES = {
   opencode: {
     label: 'OpenCode',
     description: 'OpenCode CLI, open-source coding agent.',
+    install: 'npm install -g opencode-ai',
     bin: () => process.env.OPENCODE_BIN || 'opencode',
     craft(prompt, job) {
       const args = ['run', prompt, '--yes', '--no-notifications'];
@@ -108,6 +111,7 @@ export const HARNESSES = {
   codex: {
     label: 'OpenAI Codex',
     description: 'OpenAI Codex CLI (codex).',
+    install: 'npm install -g @openai/codex',
     bin: () => process.env.CODEX_BIN || 'codex',
     craft(prompt, job) {
       const args = ['exec', '--skip-git-repo-check', '--yes', '--json', prompt];
@@ -119,6 +123,7 @@ export const HARNESSES = {
   gemini: {
     label: 'Gemini CLI',
     description: 'Google Gemini CLI (gemini).',
+    install: 'npm install -g @google/gemini-cli',
     bin: () => process.env.GEMINI_BIN || 'gemini',
     craft(prompt, job) {
       const args = ['-p', prompt];
@@ -130,6 +135,7 @@ export const HARNESSES = {
   aider: {
     label: 'Aider',
     description: 'Aider — AI pair programming CLI.',
+    install: 'python -m pip install -U aider-chat',
     bin: () => process.env.AIDER_BIN || 'aider',
     craft(prompt, job) {
       const args = ['--message', prompt, '--yes-always', '--no-check-update', '--no-git', '--no-auto-commits'];
@@ -141,6 +147,7 @@ export const HARNESSES = {
   'qwen-code': {
     label: 'Qwen Code',
     description: 'Qwen Code CLI (qwen-code).',
+    install: 'npm install -g @qwen-code/qwen-code',
     bin: () => process.env.QWEN_CODE_BIN || 'qwen-code',
     craft(prompt, job) {
       const args = ['--headless', prompt, '--yes'];
@@ -153,6 +160,7 @@ export const HARNESSES = {
   'github-copilot': {
     label: 'GitHub Copilot CLI',
     description: 'GitHub Copilot CLI (copilot -p "…").',
+    install: 'npm install -g @github/copilot',
     bin: () => process.env.COPILOT_BIN || 'copilot',
     craft(prompt) {
       return ['-p', prompt];
@@ -245,11 +253,12 @@ export async function checkAvailability() {
 
   const out = [];
   for (const [id, def] of Object.entries(HARNESSES)) {
-    if (!def.bin) { out.push({ id, label: def.label, binary: '—', available: true, note: 'built-in' }); continue; }
+    if (!def.bin) { out.push({ id, label: def.label, binary: '—', available: true, note: 'built-in', install: '' }); continue; }
     const bin = def.bin();
     const available = await which(bin.split(/\s+/)[0]);
     out.push({
       id, label: def.label, binary: bin, available,
+      install: def.install || '',
       overridden: !!binEnvVar(id),
       version: available ? await version(bin.split(/\s+/)[0]) : '',
     });
