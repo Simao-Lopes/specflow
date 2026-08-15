@@ -2,7 +2,53 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api.js';
 import { TYPES, statusClass, fmtTs } from './SpecBoard.jsx';
 import { flowHint } from './StepsBuilder.jsx';
+import AgentConsole from './AgentConsole.jsx';
 import AgentChat from './AgentChat.jsx';
+import PipelineVisual from './PipelineVisual.jsx';
+
+// Clearly-collapsible section: tappable header with chevron + hint, so it's
+// obvious the panel expands/collapses.
+export function CollapsibleSection({ title, icon, open: controlled, defaultOpen, onToggle, children, badge }) {
+  const [self, setSelf] = useState(defaultOpen ?? true);
+  const open = controlled !== undefined ? controlled : self;
+  const toggle = () => { if (onToggle) onToggle(!open); else setSelf(!open); };
+  return (
+    <div className={`collapsible ${open ? 'open' : 'closed'}`}>
+      <button className="collapsible-head" onClick={toggle} aria-expanded={open}>
+        <span className="collapsible-ic">{icon || '▸'}</span>
+        <span className="collapsible-title">{title}</span>
+        {badge && <span className="collapsible-badge">{badge}</span>}
+        <span className="collapsible-chev">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && <div className="collapsible-body">{children}</div>}
+    </div>
+  );
+}
+
+// Prominent PR banner for the selected job.
+function PRBanner({ job }) {
+  if (!job) return null;
+  const url = job.pr_url;
+  if (!url) {
+    // No PR yet — if the job has a branch, point at a manual compare URL.
+    const base = job.repo ? job.repo.replace(/\.git$/, '').replace(/^git@github.com:/, 'https://github.com/') : null;
+    const compare = (base && job.branch) ? `${base}/compare/main...${job.branch}` : null;
+    return (
+      <div className="pr-banner pr-none">
+        <span className="pr-ic">⎇</span>
+        <span className="pr-text">No pull request yet — {job.branch ? <code className="mono">{job.branch}</code> : 'no branch'} on {job.status}</span>
+        {compare && <a className="btn ghost small" href={compare} target="_blank" rel="noreferrer">Compare ↗</a>}
+      </div>
+    );
+  }
+  return (
+    <div className="pr-banner pr-live">
+      <span className="pr-ic">⤴</span>
+      <span className="pr-text">Pull request ready</span>
+      <a className="btn primary small" href={url} target="_blank" rel="noreferrer">Open PR ↗</a>
+    </div>
+  );
+}
 
 export default function SpecDetail({
   specId, onNotify, onBack,
@@ -19,7 +65,6 @@ export default function SpecDetail({
   const [running, setRunning] = useState(false);
   const [gateNotes, setGateNotes] = useState({});
   const [syncTick, setSyncTick] = useState(0);
-  const logRef = useRef(null);
   const seenLogIds = useRef(new Set());
   const seenMsgIds = useRef(new Set());
   const selectedJobRef = useRef(null);
@@ -130,11 +175,6 @@ export default function SpecDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logs, selectedJob, specId]);
 
-  // Auto-scroll log console to bottom.
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [logs, selectedJob]);
-
   const startRun = async () => {
     if (!spec || running) return;
     setRunning(true);
@@ -145,8 +185,8 @@ export default function SpecDetail({
     finally { setRunning(false); loadAll(); }
   };
 
-  const gateAction = async (job, action) => {
-    const note = (gateNotes[job.id] || '').trim();
+  const gateAction = async (job, action, noteArg) => {
+    const note = (noteArg !== undefined ? noteArg : (gateNotes[job.id] || '')).trim();
     try {
       await api.gateJob(job.id, action, note);
       onNotify(
@@ -190,7 +230,7 @@ export default function SpecDetail({
 
   if (!spec) return <section className="view"><div className="empty"><p>Loading spec…</p></div></section>;
 
-  const gatedJobs = jobs.filter((j) => j.status === 'gated' && j.gate_state === 'waiting');
+  const gatedJobs = jobs.filter((j) => j.status === 'gated' && (j.gate_state === 'waiting' || j.gate_state === 'failed'));
   const pipelineName = spec.pipeline_id
     ? (pipelines || []).find((p) => String(p.id) === String(spec.pipeline_id))?.name
     : null;
@@ -258,25 +298,33 @@ export default function SpecDetail({
       <div className="card jobs">
         {gatedJobs.length > 0 && (
           <div className="gate-list">
-            {gatedJobs.map((j) => (
-              <div key={j.id} className="gate-banner">
-                <div className="gate-title">
-                  ⏸ Awaiting approval to proceed to <b className="mono">{j.gate_step || 'next step'}</b>
-                  <span className="muted small mono"> · job {String(j.id).slice(0, 8)}</span>
+            {gatedJobs.map((j) => {
+              const failed = j.gate_state === 'failed';
+              return (
+                <div key={j.id} className={`gate-banner ${failed ? 'gate-failed' : ''}`}>
+                  <div className="gate-title">
+                    {failed ? '❌ Step failed' : '⏸ Awaiting approval to proceed to'} {failed
+                      ? <b className="mono">{j.gate_step || 'this step'}</b>
+                      : <b className="mono">{j.gate_step || 'next step'}</b>}
+                    <span className="muted small mono"> · job {String(j.id).slice(0, 8)}</span>
+                  </div>
+                  {failed && j.error && (
+                    <div className="gate-error mono small">{j.error}</div>
+                  )}
+                  <input
+                    className="input mono gate-note"
+                    placeholder="Optional note (sent to the agent)…"
+                    value={gateNotes[j.id] || ''}
+                    onChange={(e) => setGateNotes((g) => ({ ...g, [j.id]: e.target.value }))}
+                  />
+                  <div className="gate-actions">
+                    <button className="btn primary small" onClick={() => gateAction(j, 'retry')}>⟳ Retry</button>
+                    <button className="btn danger small" onClick={() => gateAction(j, 'reject')}>✕ Reject</button>
+                    <button className="btn ghost small" onClick={() => gateAction(j, 'approve')}>Skip & continue</button>
+                  </div>
                 </div>
-                <input
-                  className="input mono gate-note"
-                  placeholder="Optional note (sent to the agent)…"
-                  value={gateNotes[j.id] || ''}
-                  onChange={(e) => setGateNotes((g) => ({ ...g, [j.id]: e.target.value }))}
-                />
-                <div className="gate-actions">
-                  <button className="btn primary small" onClick={() => gateAction(j, 'approve')}>✓ Approve</button>
-                  <button className="btn danger small" onClick={() => gateAction(j, 'reject')}>✕ Reject</button>
-                  <button className="btn ghost small" onClick={() => gateAction(j, 'retry')}>⟳ Retry current</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -310,53 +358,42 @@ export default function SpecDetail({
 
       <h3 className="section-title">Live Pipeline</h3>
       <div className="card pipeline-card">
-        {liveStepEvents.length === 0 ? (
-          <p className="muted">No live step activity. Start a run to stream pipeline steps here.</p>
-        ) : (
-          <>
-            <p className="muted small">Streaming step status from the active run(s):</p>
-            <div className="pipeline-list">
-              {liveStepEvents.slice(0, 30).map((s, i) => (
-                <div className="pipe-row" key={i}>
-                  <span className={`badge ${statusClass(s.status)}`}>{s.status}</span>
-                  <span className="pipe-name">{s.name || s.step_id}</span>
-                  {s.attempt != null && <span className="mono small muted">attempt {s.attempt}</span>}
-                  <span className="mono chip small">job {String(s.job_id).slice(0, 8)}</span>
-                  {s.detail && <span className="pipe-detail mono small">{s.detail}</span>}
+        <PRBanner job={(jobs || []).find((j) => String(j.id) === String(selectedJob))} />
+        <CollapsibleSection title="Pipeline flow" icon="◫" defaultOpen>
+          <PipelineVisual
+            steps={steps}
+            jobs={jobs}
+            selectedJob={selectedJob}
+            stepEvents={liveStepEvents}
+            onGate={gateAction}
+            messages={messages}
+            onSendMessage={sendMessage}
+          />
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Agent activity" icon="⚡" defaultOpen={false}>
+          <div className="rail-stream" style={{ borderTop: 'none', paddingTop: 0 }}>
+            {liveStepEvents.length === 0 ? <p className="muted small">Run a pipeline to stream live agent activity here.</p>
+              : liveStepEvents.slice(0, 40).map((a, i) => (
+                <div key={i} className={`stream-line ${a.type === 'gate' ? 'stream-gate' : ''}`}>
+                  <span className="stream-ic mono">{a.name || a.step_id}</span>
+                  {a.attempt != null && <span className="mono small muted">att {a.attempt}</span>}
+                  <span className={`badge ${statusClass(a.status)}`}>{a.status}</span>
+                  {a.detail && <span className="stream-detail mono small">{a.detail}</span>}
                 </div>
               ))}
-            </div>
-          </>
-        )}
-      </div>
+          </div>
+        </CollapsibleSection>
 
-      <h3 className="section-title">Live Log</h3>
-      <div className="card console-card">
-        {!selectedJob ? (
-          <p className="muted">Select a run to view its live log console.</p>
-        ) : (
-          <>
-            <div className="console-head mono">job {selectedJob.slice(0, 8)}… {loadingLogs ? '· loading' : `· ${logs.length} lines`}</div>
-            <div className="console" ref={logRef}>
-              {logs.length === 0 && <div className="muted">No log output yet.</div>}
-              {logs.map((l, i) => (
-                <div key={i} className={`log-line ${l.level || 'info'}`}>
-                  <span className="log-ts mono">[{fmtTs(l.ts)}]</span>
-                  <span className={`log-level mono ${l.level || 'info'}`}>{(l.level || 'info').padEnd(5)}</span>
-                  <span className="log-msg">{l.message}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <h3 className="section-title">Agent Session</h3>
-      <div className="card chat-card">
-        <p className="muted small" style={{ marginTop: 0 }}>
-          Chat with the agent working on this spec. Messages are persisted and injected into agent prompts as guidance.
-        </p>
-        <AgentChat messages={messages} onSend={sendMessage} />
+        <CollapsibleSection title="Agent console" icon="⌨" defaultOpen={false}>
+          <AgentConsole
+            messages={messages}
+            logs={logs}
+            stepEvents={liveStepEvents}
+            selectedJob={selectedJob}
+            onSend={sendMessage}
+          />
+        </CollapsibleSection>
       </div>
     </section>
   );

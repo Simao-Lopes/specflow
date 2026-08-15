@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../api.js';
 
-const HARNESSES = ['custom', 'hermes', 'claude', 'llm', 'opencode', 'codex', 'gemini', 'aider', 'qwen-code', 'github-copilot'];
+const HARNESSES = ['hermes', 'claude', 'opencode', 'codex', 'gemini', 'aider', 'qwen-code', 'github-copilot'];
 const PROVIDERS = ['gemini', 'openrouter', 'nvidia', 'ollama', 'litellm'];
 
 const DEFAULT_SETTINGS = {
-  default_harness: 'custom',
+  default_harness: 'hermes',
   default_provider: 'gemini',
   default_model: '',
   default_repo: '',
@@ -426,9 +426,6 @@ export default function Config({ config, onNotify, onChanged }) {
           <h4 className="settings-group-title">Runtime</h4>
           <Field label="Primary channel">
             <input className="input mono" value={settings.primary_channel} onChange={(e) => setSetting('primary_channel', e.target.value)} placeholder="channel name" />
-          </Field>
-          <Field label="Custom command">
-            <input className="input mono" value={settings.custom_command} onChange={(e) => setSetting('custom_command', e.target.value)} placeholder="fallback custom command" />
           </Field>
         </div>
         <div className="form-actions">

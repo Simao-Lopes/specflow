@@ -66,7 +66,7 @@ export default function App() {
 
   // Socket.IO — same-origin io() works in dev (proxied) and prod (served by backend).
   useEffect(() => {
-    const socket = io({ path: undefined });
+    const socket = io({ path: '/specflow/socket.io' });
     socketRef.current = socket;
 
     // watch-all: receive logs for every job, filter client-side

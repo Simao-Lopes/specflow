@@ -1,8 +1,11 @@
 // Thin fetch helper for the SpecFlow backend.
-// All paths are RELATIVE (/api/...) so they work through the Vite dev proxy
-// and when the built UI is served by the backend itself at /ui/.
+// The whole app (API + UI) is served under the /specflow URL prefix, so every
+// request path is prefixed with API_BASE. This works both through the Vite
+// dev proxy (rewritten) and when the built UI is served by the backend itself.
+const API_BASE = '/specflow';
 
 async function request(path, options = {}) {
+  const fullPath = API_BASE + path;
   const opts = {
     method: options.method || (options.body ? 'POST' : 'GET'),
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -11,7 +14,7 @@ async function request(path, options = {}) {
   if (options.body !== undefined && typeof options.body !== 'string') {
     opts.body = JSON.stringify(options.body);
   }
-  const res = await fetch(path, opts);
+  const res = await fetch(fullPath, opts);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let detail = text;
@@ -39,6 +42,8 @@ export const api = {
 
   listJobs: (specId) => request(`/api/jobs?specId=${encodeURIComponent(specId || '')}`),
   jobLogs: (jobId, limit = 500) => request(`/api/jobs/${jobId}/logs?limit=${limit}`),
+  jobArtifacts: (jobId) => request(`/api/jobs/${jobId}/artifacts`),
+  jobGitHistory: (jobId) => request(`/api/jobs/${jobId}/githistory`),
 
   // Human gate: advance a paused job (action: approve | reject | retry).
   gateJob: (jobId, action, note) => request(`/api/jobs/${jobId}/gate`, { method: 'POST', body: { action, ...(note ? { note } : {}) } }),

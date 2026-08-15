@@ -1,5 +1,7 @@
-// Git integration layer. Clones/opens a repo, checks out a feature branch,
-// commits, and opens a PR via GitHub (never auto-merges).
+// Git integration layer. Each feature/job gets its OWN git worktree (an
+// isolated checkout on its own branch), so concurrent jobs never clobber each
+// other. Commits land on the feature branch; PRs are opened via GitHub
+// (never auto-merged).
 
 import simpleGit from 'simple-git';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -12,29 +14,63 @@ export function parseRepoUrl(url) {
   return m ? { owner: m[1], name: m[2] } : null;
 }
 
-export function ensureCheckout(repoUrl, { repoRoot }) {
-  const parsed = parseRepoUrl(repoUrl);
-  if (!parsed) throw new Error(`Cannot parse repo: ${repoUrl}`);
-  const checkout = resolve(repoRoot, parsed.owner, parsed.name);
-  mkdirSync(checkout, { recursive: true });
-
-  if (!existsSync(join(checkout, '.git'))) {
-    const git = simpleGit();
-    git.clone(repoUrl, checkout);
-  }
-  return checkout;
+// A safe filesystem slug from a branch (used to build the worktree dir).
+export function slugify(s) {
+  return String(s || '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'feature';
 }
 
-export async function prepareBranch({ repoUrl, branch, base = 'main', repoRoot }) {
-  const checkout = ensureCheckout(repoUrl, { repoRoot });
-  const git = simpleGit(checkout);
+// Path of the per-branch worktree for a job. Unique per (repo, branch).
+export function worktreePath(repoUrl, branch, { repoRoot }) {
+  const parsed = parseRepoUrl(repoUrl);
+  const slug = slugify(branch);
+  const base = parsed ? `${parsed.owner}__${parsed.name}` : Buffer.from(repoUrl).toString('hex').slice(0, 12);
+  return resolve(repoRoot, '_worktrees', `${base}__${slug}`);
+}
+
+// Ensure the base (shared) clone exists. Used only as the source for worktrees.
+export async function ensureBaseRepo(repoUrl, { repoRoot }) {
+  const parsed = parseRepoUrl(repoUrl);
+  if (!parsed) throw new Error(`Cannot parse repo: ${repoUrl}`);
+  const main = resolve(repoRoot, parsed.owner, parsed.name);
+  mkdirSync(main, { recursive: true });
+  if (!existsSync(join(main, '.git'))) {
+    await simpleGit().clone(repoUrl, main);
+  }
+  return main;
+}
+
+// Create (or reuse) an isolated worktree for a branch, synced to origin/base.
+// Returns the worktree path. Call on a FRESH run / retry; on a gate resume you
+// pass reuse=true to keep the existing worktree (don't reset away the work).
+export async function prepareWorktree({ repoUrl, branch, base = 'main', repoRoot, reuse = false }) {
+  const main = await ensureBaseRepo(repoUrl, { repoRoot });
+  const git = simpleGit(main);
   await git.fetch(['--all']);
-  await git.checkout([base]);
-  await git.pull(['origin', base]).catch(() => {});
-  // Recreate branch cleanly if it exists
-  try { await git.branch(['-D', branch]); } catch {}
-  await git.checkoutLocalBranch(branch);
-  return checkout;
+
+  const wt = worktreePath(repoUrl, branch, { repoRoot });
+  const registered = existsSync(join(wt, '.git'));
+
+  if (!registered) {
+    // Add a new worktree with its own branch, based on origin/<base>.
+    // simple-git has no .worktree() in v3 — use raw git.
+    await git.raw(['worktree', 'add', '-b', branch, wt, `origin/${base}`]).catch(async () => {
+      try {
+        await git.raw(['worktree', 'add', wt, branch]); // branch may already exist
+      } catch (e2) {
+        try { await git.raw(['branch', '-D', branch]); } catch {}
+        await git.raw(['worktree', 'add', '-b', branch, wt, `origin/${base}`]);
+      }
+    });
+  }
+
+  const wgit = simpleGit(wt);
+  if (!reuse) {
+    // Fresh run: reset to a clean base so we don't carry stale state.
+    await wgit.fetch(['--all']);
+    try { await wgit.reset(['--hard', `origin/${base}`]); } catch {}
+    try { await wgit.clean(['-fd', '.specflow', '.specflow_prompt.md']); } catch {}
+  }
+  return wt;
 }
 
 export async function commitAndPush({ checkout, branch, message, repoUrl }) {

@@ -182,8 +182,12 @@ function migrate() {
 // Canonical default pipeline steps (Plan -> Code, Code gated by a Test verifier).
 export function defaultPipelineSteps() {
   return [
-    { id: 'plan', name: 'Plan', harness: 'llm', provider: 'gemini', model: 'gemini-3.5-flash-lite', iterations: 1, on_failure: 'continue', verify: [], prompt: '' },
-    { id: 'code', name: 'Code', harness: 'hermes', provider: null, model: null, iterations: 3, on_failure: 'stop', verify: [
+    // Plan runs on a real CLI agent (hermes) using the spec-kit Specify method
+    // so it actually writes spec.md into the worktree (not just return text).
+    // Step harness (hermes) overrides the method's default (llm), so the CLI
+    // agent executes in the worktree and produces method-compliant artifacts.
+    { id: 'plan', name: 'Plan', harness: 'hermes', method: 'plan-spec', provider: null, model: null, iterations: 1, on_failure: 'continue', verify: [], prompt: '' },
+    { id: 'code', name: 'Code', harness: 'hermes', method: 'code-spec-first', provider: null, model: null, iterations: 3, on_failure: 'stop', verify: [
       { id: 'test', name: 'Test', harness: 'custom', command: '', iterations: 1, on_failure: 'stop', prompt: '' },
     ], prompt: '' },
   ];

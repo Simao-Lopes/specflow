@@ -4,12 +4,12 @@
 // iteration budget so failures (e.g. tests) cause the step to re-run with the
 // failure fed back — "code, then test, if test fails iterate".
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { getDb, initStore, defaultPipelineSteps } from './store.js';
 import { emit, EVT } from './events.js';
 import { runHarness } from '../harnesses/index.js';
-import { prepareBranch, commitAndPush, openPullRequest } from '../git/git.js';
+import { prepareWorktree, commitAndPush, openPullRequest, worktreePath } from '../git/git.js';
 import { resolveMethod, materializePrompts, resolvedStepPrompt, resolvedMethodPrompt, METHODS } from '../methods/catalog.js';
 import { PIPELINE_PRESETS } from './presets.js';
 import { jobDefaults, autoVersionPipeline } from './settings.js';
@@ -267,7 +267,7 @@ export function upsertAgent(input) {
                      name=@name,harness=@harness,model=@model,provider=@provider,repo=@repo,
                      branch_prefix=@branch_prefix,auto_pr=@auto_pr,active=@active`).run({
     id, name: input.name || 'default',
-    harness: input.harness || 'custom', model: input.model || null,
+    harness: input.harness || 'hermes', model: input.model || null,
     provider: input.provider || null, repo: input.repo || null,
     branch_prefix: input.branch_prefix || 'feature/', auto_pr: input.auto_pr ? 1 : 0,
     active: input.active !== false ? 1 : 0,
@@ -324,10 +324,14 @@ export async function runJob({ specId, harness, model, provider, agentId }) {
 
   const jobId = randomUUID().slice(0, 8);
   const repo  = spec.repo || agent?.repo || jobDefaults().repo;
-  const branch = `${agent?.branch_prefix || 'feature/'}spec-${spec.id}`;
+  // Unique branch per feature, derived from the feature name (e.g. "Game" →
+  // feature/game, "Add user auth" → feature/add-user-auth). Short id appended
+  // to guarantee uniqueness for same-named features.
+  const fname = (spec.title || spec.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || spec.id;
+  const branch = `${agent?.branch_prefix || 'feature/'}${fname}-${spec.id.slice(0, 4)}`;
   const job = {
     id: jobId, spec_id: specId,
-    harness: harness || agent?.harness || jobDefaults().harness || 'custom',
+    harness: harness || agent?.harness || jobDefaults().harness || 'hermes',
     model: model || agent?.model || jobDefaults().model || null,
     provider: provider || agent?.provider || jobDefaults().provider || null,
     status: 'queued', repo, branch,
@@ -354,15 +358,18 @@ async function executeJob(jobId) {
   try {
     mark(jobId, 'running');
 
-    // One-time checkout setup only on the first (re)entry of a fresh run.
+    // Each job has its OWN git worktree on its own feature branch, so
+    // concurrent jobs don't clobber each other's checkout.
     let workdir;
     if (job.repo) {
-      workdir = checkout(repoRoot, job.repo);
-      // Always sync branch unless this is a retry of an already-paused pipeline.
-      if (job.gate_state !== 'waiting' && job.gate_state !== 'approved') {
-        addLog(jobId, `Checking out branch ${job.branch} from ${job.repo}`);
-        await prepareBranch({ repoUrl: job.repo, branch: job.branch, base: 'main', repoRoot });
+      workdir = worktreePath(job.repo, job.branch, { repoRoot });
+      const resume = job.gate_state === 'waiting' || job.gate_state === 'approved';
+      if (resume) {
+        addLog(jobId, `Resuming job — reusing worktree for ${job.branch}`);
+      } else {
+        addLog(jobId, `Preparing worktree for branch ${job.branch} from ${job.repo}`);
       }
+      workdir = await prepareWorktree({ repoUrl: job.repo, branch: job.branch, base: 'main', repoRoot, reuse: resume });
     } else {
       workdir = join(repoRoot, '_scratch', `job-${jobId}`);
       mkdirSync(workdir, { recursive: true });
@@ -393,25 +400,22 @@ async function executeJob(jobId) {
         return;
       }
     } else {
-      // Step failed.
-      if (step.on_failure === 'continue') {
-        if (nextIdx < steps.length) {
-          getDb().prepare('UPDATE jobs SET step_index=?, gate_state=\'waiting\', gate_step=? WHERE id=?')
-            .run(nextIdx, steps[nextIdx].name, jobId);
-          addLog(jobId, `⚠ Step "${step.name}" failed (on_failure=continue) — awaiting human to proceed to "${steps[nextIdx].name}"`);
-          addMessage({ specId: spec.id, role: 'system', author: 'specflow',
-            content: `Step "${step.name}" FAILED but pipeline continues. Awaiting human gate for "${steps[nextIdx].name}".`, inReplyJob: jobId });
-          mark(jobId, 'gated');
-          return;
-        }
-        // last step failed-continue => finish as done w/ note
-        addMessage({ specId: spec.id, role: 'system', author: 'specflow', content: `Job ${jobId}: final step "${step.name}" failed (continue).`, inReplyJob: jobId });
-        mark(jobId, 'failed');
-        updateSpec(spec.id, { status: 'review' });
-        return;
-      }
-      mark(jobId, 'failed');
-      updateSpec(spec.id, { status: 'backlog' });
+      // Step FAILED. Never silently advance to the next step (the old
+      // on_failure='continue' behavior hid the failure behind the next gate
+      // and asked the human to "approve Test" instead of surfacing the error).
+      // Gate AT the failed step with gate_state='failed' so the UI shows the
+      // error + Retry / Reject, and the human decides explicitly.
+      const frow = getDb().prepare(
+        "SELECT detail FROM job_steps WHERE job_id=? AND step_id=? AND status='failed' ORDER BY finished_at DESC LIMIT 1"
+      ).get(jobId, step.id);
+      const failDetail = frow?.detail || 'step failed';
+      getDb().prepare('UPDATE jobs SET step_index=?, gate_state=?, gate_step=?, error=? WHERE id=?')
+        .run(idx, 'failed', step.name, failDetail, jobId);
+      addLog(jobId, `❌ Step "${step.name}" FAILED: ${failDetail} — awaiting human (Retry to re-run, Reject to stop).`, 'error');
+      addMessage({ specId: spec.id, role: 'system', author: 'specflow',
+        content: `Step "${step.name}" FAILED: ${failDetail}. Retry to re-run this step, or Reject to stop the pipeline.`, inReplyJob: jobId });
+      mark(jobId, 'gated');
+      return;
     }
   } catch (e) {
     const err = e?.message || String(e);
@@ -448,24 +452,55 @@ async function finishJob(job, spec, { workdir } = {}) {
   }
 }
 
-// Resolve a repo URL to its local checkout path.
-function checkout(repoRoot, repoUrl) {
-  // e.g. https://github.com/owner/name.git -> <repoRoot>/owner/name
-  const m = String(repoUrl).match(/(?:github\.com[/:]|^)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
-  if (!m) return join(repoRoot, '_repos', Buffer.from(repoUrl).toString('hex').slice(0, 16));
-  return join(repoRoot, m[1], m[2]);
+// Per-job worktrees live under <repoRoot>/_worktrees/<owner>__<name>__<branch>
+// (see ../git/git.js worktreePath). No shared checkout anymore.
+
+// Persist a pipeline step's output as a file in the worktree, then commit+push
+// so the artifact (spec, plan, etc.) actually lands in git and shows in the UI.
+async function persistStepArtifact(job, spec, step, output, workdir) {
+  try {
+    if (!workdir || !output || !output.trim()) return null;
+    const fs = await import('node:fs');
+    const slug = (step.name || step.id || 'step').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'artifact';
+    const ext = /^[.\n]*```/.test(output.trim()) ? '.md' : '.md';
+    const dir = join(workdir, '.specflow', 'artifacts');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = join(dir, `${slug}.md`);
+    const header = `# ${step.name || step.id} — ${spec.title}\n\n_Generated ${new Date().toISOString()} by SpecFlow._\n\n---\n\n`;
+    fs.writeFileSync(file, header + output.trim() + '\n');
+    // Commit + push so the plan reaches the remote branch.
+    if (job.repo) {
+      const { commitAndPush } = await import('../git/git.js');
+      await commitAndPush({ checkout: workdir, branch: job.branch, repoUrl: job.repo, message: `[SpecFlow] ${step.name || step.id} artifact` });
+    }
+    return `.specflow/artifacts/${slug}.md`;
+  } catch { return null; }
 }
 
 // Human gate decision (approve / reject / retry).
 export async function gateJob(jobId, action, note = '') {
   const job = getJob(jobId);
   if (!job) throw new Error('Job not found');
-  if (job.gate_state !== 'waiting') throw new Error('No pending gate on this job');
+  if (job.gate_state !== 'waiting' && job.gate_state !== 'failed') throw new Error('No pending gate on this job');
+  // On a failure gate, step_index points AT the failed step, so redo re-runs it.
+  // On a success gate, step_index points at the NEXT step, so redo re-runs step_index-1.
+  const redoIdx = (job.gate_state === 'failed')
+    ? Math.max(0, job.step_index || 0)
+    : Math.max(0, (job.step_index || 1) - 1);
 
   if (action === 'approve') {
-    getDb().prepare('UPDATE jobs SET gate_state=? WHERE id=?').run('approved', jobId);
-    addLog(jobId, `✅ Gate approved — proceeding to step "${job.gate_step}"`);
-    addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Approve next step: ${job.gate_step}${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    if (job.gate_state === 'failed') {
+      // Failure gate: "approve" means SKIP the failed step and continue to the
+      // next one (the step_index points at the failed step, so advance it).
+      const skipTo = Math.min((job.step_index || 0) + 1, (stepsOf(getSpec(job.spec_id) || {}).length || 1) - 1);
+      getDb().prepare('UPDATE jobs SET step_index=?, gate_state=? WHERE id=?').run(skipTo, 'approved', jobId);
+      addLog(jobId, `⏭ Human chose to skip the failed step and continue to the next step.`);
+      addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Skip failed step and continue${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    } else {
+      getDb().prepare('UPDATE jobs SET gate_state=? WHERE id=?').run('approved', jobId);
+      addLog(jobId, `✅ Gate approved — proceeding to step "${job.gate_step}"`);
+      addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Approve next step: ${job.gate_step}${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    }
     mark(jobId, 'running');
     runner.enqueue(jobId);           // resume: execute steps[job.step_index]
     return getJob(jobId);
@@ -481,11 +516,24 @@ export async function gateJob(jobId, action, note = '') {
   }
 
   if (action === 'retry') {
-    // Re-run the step that just produced this gate.
-    const redoIdx = Math.max(0, (job.step_index || 1) - 1);
+    // Re-run the step that just produced this gate (the failed step on a
+    // failure gate; the producing step on a success gate).
     getDb().prepare('UPDATE jobs SET step_index=?, gate_state=? WHERE id=?').run(redoIdx, 'retrying', jobId);
     addLog(jobId, `↻ Human requested retry of step at index ${redoIdx}`);
     addMessage({ specId: job.spec_id, role: 'user', author: 'human', content: `Retry step "${job.gate_step}"${note ? ' — ' + note : ''}`, inReplyJob: jobId });
+    mark(jobId, 'running');
+    runner.enqueue(jobId);
+    return getJob(jobId);
+  }
+
+  if (action === 'revise') {
+    // Re-run the step that produced the artifact being reviewed (the one we
+    // just passed / gated on), injecting accumulated human feedback. This is
+    // the "adapt the plan/code from my feedback" loop.
+    getDb().prepare('UPDATE jobs SET step_index=?, gate_state=? WHERE id=?').run(redoIdx, 'revising', jobId);
+    addLog(jobId, `✎ Human requested revision of step at index ${redoIdx}${note ? ' — ' + note : ''}`);
+    addMessage({ specId: job.spec_id, role: 'user', author: 'human',
+      content: `Revise step "${job.gate_step || 'this step'}" with this feedback: ${note || '(no note)'}`, inReplyJob: jobId });
     mark(jobId, 'running');
     runner.enqueue(jobId);
     return getJob(jobId);
@@ -533,7 +581,12 @@ async function executeStep(job, spec, step, { checkout }) {
         repo: job.repo, branch: job.branch,
         step: runStep, feedback, lifecycle: 'work',
       }, { checkout, repo: job.repo, spec });
-      addLog(jobIdT(job), `  [${step.name}] harness done: ${result?.messages || result?.message || 'ok'}`);
+      const out = result?.messages || result?.message || '';
+      // Persist the step's output as an artifact file in the worktree so it
+      // actually shows up in git and in the Files panel — not just in logs.
+      const artifactPath = await persistStepArtifact(job, spec, step, out, checkout);
+      if (artifactPath) addLog(jobIdT(job), `  [${step.name}] artifact → ${artifactPath}`);
+      addLog(jobIdT(job), `  [${step.name}] harness done: ${out.slice(0, 200)}`);
       lastErr = null;
     } catch (e) {
       lastErr = e?.message || String(e);
@@ -649,5 +702,99 @@ function startRunner() {
       await executeJob(jobId);
     }
     running = false;
+  }
+}
+// ---------------------------------------------------------------------------
+// Artifacts + git history for a job — surface what each pipeline step produced.
+// ---------------------------------------------------------------------------
+const ARTIFACT_EXTS = /\.(md|markdown|json|py|js|jsx|ts|tsx|c|cpp|h|hpp|go|rs|java|rb|sh|bash|sql|yaml|yml|toml|xml|html|css|scss)$/i;
+
+export async function jobWorkdir(jobId) {
+  const job = getJob(jobId);
+  if (!job) return null;
+  const repoRoot = resolve(jobRepoRoot());
+  if (job.repo) return worktreePath(job.repo, job.branch, { repoRoot });
+  return join(repoRoot, '_scratch', `job-${jobId}`);
+}
+
+async function walkArtifacts(dir, relBase = '', acc = [], depth = 0) {
+  if (depth > 8) return;
+  const fs = await import('node:fs');
+  const pfs = (await import('node:fs/promises'));
+  let entries;
+  try { entries = await pfs.readdir(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    if (e.name === '.git' || e.name === 'node_modules' || e.name === '_scratch') continue;
+    const abs = join(dir, e.name);
+    const rel = relBase ? join(relBase, e.name) : e.name;
+    try {
+      const st = await pfs.stat(abs);
+      if (e.isDirectory()) { await walkArtifacts(abs, rel, acc, depth + 1); continue; }
+      if (!st.isFile() || !ARTIFACT_EXTS.test(e.name)) continue;
+      acc.push({ path: rel, size: st.size, mtime: st.mtimeMs });
+    } catch {}
+  }
+}
+
+export async function jobArtifacts(jobId) {
+  const job = getJob(jobId);
+  if (!job) return { success: false, error: 'job not found' };
+  try {
+    const spec = getSpec(job.spec_id);
+    const workdir = await jobWorkdir(jobId);
+    const artifacts = [];
+    let git = null;
+    const fs = await import('node:fs');
+    const pfs = (await import('node:fs/promises'));
+    if (workdir && fs.existsSync(workdir)) {
+      await walkArtifacts(workdir, '', artifacts);
+      artifacts.sort((a, b) => a.path.localeCompare(b.path));
+    }
+    if (job.repo && workdir && fs.existsSync(join(workdir, '.git'))) {
+      const { execFile } = await import('node:child_process');
+      const ex = (args) => new Promise((r) => {
+        execFile('git', args, { cwd: workdir, timeout: 8000 }, (err, so) => r(err ? '' : String(so).trim()));
+      });
+      git = {
+        branch: await ex(['branch', '--show-current']) || await ex(['rev-parse', '--abbrev-ref', 'HEAD']),
+        remote: await ex(['remote', 'get-url', 'origin']),
+        log: (await ex(['log', '--oneline', '-20', '--decorate'])).split('\n').filter(Boolean),
+        pr_url: job.pr_url || null,
+      };
+    }
+    return { success: true, steps: Array.isArray(spec) ? [] : stepsOf(spec || {}), artifacts, git, workdir };
+  } catch (e) {
+    return { success: false, error: String(e?.message || e) };
+  }
+}
+
+export async function jobGitHistory(jobId) {
+  const job = getJob(jobId);
+  if (!job) return { success: false, error: 'job not found' };
+  if (!job.repo) return { success: false, error: 'no repo for this job' };
+  try {
+    const workdir = await jobWorkdir(jobId);
+    const fs = await import('node:fs');
+    if (!workdir || !fs.existsSync(join(workdir, '.git'))) return { success: false, error: 'no git worktree' };
+    const { execFile } = await import('node:child_process');
+    const ex = (args) => new Promise((r) => {
+      execFile('git', args, { cwd: workdir, timeout: 10000 }, (err, so) => r(err ? '' : String(so).trim()));
+    });
+    const branch = await ex(['branch', '--show-current']) || await ex(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const raw = await ex(['log', '--pretty=format:%H%x09%an%x09%at%x09%s', '-n', '50', branch]);
+    const commits = raw ? raw.split('\n').filter(Boolean).map((line) => {
+      const [hash, author, at, ...rest] = line.split('\t');
+      return { hash, short: hash ? hash.slice(0, 8) : hash, author, at: at ? Number(at) : null, subject: rest.join('\t') };
+    }) : [];
+    return {
+      success: true, branch,
+      current: await ex(['rev-parse', '--abbrev-ref', 'HEAD']),
+      commits,
+      graph: (await ex(['log', '--oneline', '--all', '--graph', '-n', '30'])).split('\n').filter(Boolean),
+      uncommitted: await ex(['status', '--porcelain']),
+      pr_url: job.pr_url || null,
+    };
+  } catch (e) {
+    return { success: false, error: String(e?.message || e) };
   }
 }
