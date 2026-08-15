@@ -254,34 +254,6 @@ export function addMessage({ specId, role = 'user', author = 'human', content, i
 }
 
 // ---------------------------------------------------------------------------
-// Agents
-// ---------------------------------------------------------------------------
-export function listAgents() {
-  return getDb().prepare('SELECT * FROM agents ORDER BY created_at DESC').all();
-}
-export function upsertAgent(input) {
-  const id = input.id || randomUUID().slice(0, 8);
-  getDb().prepare(`INSERT INTO agents (id,name,harness,model,provider,repo,branch_prefix,auto_pr,active)
-                   VALUES (@id,@name,@harness,@model,@provider,@repo,@branch_prefix,@auto_pr,@active)
-                   ON CONFLICT(id) DO UPDATE SET
-                     name=@name,harness=@harness,model=@model,provider=@provider,repo=@repo,
-                     branch_prefix=@branch_prefix,auto_pr=@auto_pr,active=@active`).run({
-    id, name: input.name || 'default',
-    harness: input.harness || 'hermes', model: input.model || null,
-    provider: input.provider || null, repo: input.repo || null,
-    branch_prefix: input.branch_prefix || 'feature/', auto_pr: input.auto_pr ? 1 : 0,
-    active: input.active !== false ? 1 : 0,
-  });
-  const row = getDb().prepare('SELECT * FROM agents WHERE id=?').get(id);
-  emit(EVT.AGENT_UPDATED, row);
-  return row;
-}
-export function deleteAgent(id) {
-  getDb().prepare('DELETE FROM agents WHERE id=?').run(id);
-  emit(EVT.AGENT_UPDATED, { id, deleted: true });
-}
-
-// ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
 export function listJobs({ specId } = {}) {
@@ -316,24 +288,22 @@ function setStep(jobId, step, patch) {
 }
 
 // Execute a spec through its full steps pipeline with a chosen (or default) agent.
-export async function runJob({ specId, harness, model, provider, agentId }) {
+export async function runJob({ specId, harness, model, provider }) {
   const spec = getSpec(specId);
   if (!spec) throw new Error('Spec not found');
-  const agent = agentId ? getDb().prepare('SELECT * FROM agents WHERE id=?').get(agentId)
-                        : getDb().prepare('SELECT * FROM agents WHERE active=1 ORDER BY created_at LIMIT 1').get();
 
   const jobId = randomUUID().slice(0, 8);
-  const repo  = spec.repo || agent?.repo || jobDefaults().repo;
+  const repo  = spec.repo || jobDefaults().repo;
   // Unique branch per feature, derived from the feature name (e.g. "Game" →
   // feature/game, "Add user auth" → feature/add-user-auth). Short id appended
   // to guarantee uniqueness for same-named features.
   const fname = (spec.title || spec.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || spec.id;
-  const branch = `${agent?.branch_prefix || 'feature/'}${fname}-${spec.id.slice(0, 4)}`;
+  const branch = `feature/${fname}-${spec.id.slice(0, 4)}`;
   const job = {
     id: jobId, spec_id: specId,
-    harness: harness || agent?.harness || jobDefaults().harness || 'hermes',
-    model: model || agent?.model || jobDefaults().model || null,
-    provider: provider || agent?.provider || jobDefaults().provider || null,
+    harness: harness || jobDefaults().harness || 'hermes',
+    model: model || jobDefaults().model || null,
+    provider: provider || jobDefaults().provider || null,
     status: 'queued', repo, branch,
   };
   getDb().prepare(`INSERT INTO jobs (id,spec_id,harness,model,provider,status,repo,branch)

@@ -231,16 +231,6 @@ textarea.input.mono { font-family: var(--mono); font-size: 13px; line-height: 1.
 .log-level.debug, .log-debug { color: var(--muted); }
 .log-msg { color: var(--text); word-break: break-word; flex: 1; }
 
-/* ---------- Agents ---------- */
-.agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.agent-card { display: flex; flex-direction: column; gap: 14px; }
-.agent-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.agent-head h3 { margin: 0; font-size: 16px; }
-.agent-kvs { display: flex; flex-direction: column; gap: 8px; }
-.agent-kvs > div { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; border-bottom: 1px dashed var(--border); padding-bottom: 6px; }
-.agent-actions { display: flex; gap: 8px; margin-top: auto; }
-.toggles { gap: 24px; align-items: center; }
-
 /* Toggle switch */
 .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
 .toggle input { display: none; }

@@ -36,10 +36,6 @@ export const api = {
   deleteSpec: (id) => request(`/api/specs/${id}`, { method: 'DELETE' }),
   runSpec: (id, body) => request(`/api/specs/${id}/run`, { method: 'POST', body }),
 
-  listAgents: () => request('/api/agents'),
-  upsertAgent: (body) => request('/api/agents', { method: 'PUT', body }),
-  deleteAgent: (id) => request(`/api/agents/${id}`, { method: 'DELETE' }),
-
   listJobs: (specId) => request(`/api/jobs?specId=${encodeURIComponent(specId || '')}`),
   jobLogs: (jobId, limit = 500) => request(`/api/jobs/${jobId}/logs?limit=${limit}`),
   jobArtifacts: (jobId) => request(`/api/jobs/${jobId}/artifacts`),

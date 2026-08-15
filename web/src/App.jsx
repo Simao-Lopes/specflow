@@ -4,7 +4,6 @@ import api from './api.js';
 import SpecBoard from './components/SpecBoard.jsx';
 import NewSpec from './components/NewSpec.jsx';
 import SpecDetail from './components/SpecDetail.jsx';
-import Agents from './components/Agents.jsx';
 import Config from './components/Config.jsx';
 import Pipelines from './components/Pipelines.jsx';
 
@@ -12,7 +11,6 @@ const NAV = [
   { key: 'board', label: 'Spec Board' },
   { key: 'new', label: 'New Spec' },
   { key: 'pipelines', label: 'Pipelines' },
-  { key: 'agents', label: 'Agents' },
   { key: 'config', label: 'Config' },
 ];
 
@@ -20,7 +18,6 @@ export default function App() {
   const [view, setView] = useState('board');
   const [selectedSpecId, setSelectedSpecId] = useState(null);
   const [specs, setSpecs] = useState([]);
-  const [agents, setAgents] = useState([]);
   const [config, setConfig] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [stepEvents, setStepEvents] = useState([]);
@@ -38,7 +35,6 @@ export default function App() {
   const newSpecDraftRef = useRef(null);
 
   const refreshSpecs = async () => { try { setSpecs(await api.listSpecs()); } catch (e) { notify(e.message, 'error'); } };
-  const refreshAgents = async () => { try { setAgents(await api.listAgents()); } catch (e) { notify(e.message, 'error'); } };
   const refreshConfig = async () => { try { setConfig(await api.getConfig()); } catch (e) { notify(e.message, 'error'); } };
   const refreshPipelines = async () => { try { setPipelines(await api.listPipelines()); } catch (e) { notify(e.message, 'error'); } };
   const refreshJobs = async (specId) => {
@@ -58,7 +54,6 @@ export default function App() {
 
   useEffect(() => {
     refreshSpecs();
-    refreshAgents();
     refreshConfig();
     refreshPipelines();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,7 +252,6 @@ export default function App() {
             models={config?.models || {}}
           />
         )}
-        {view === 'agents' && <Agents agents={agents} config={config} onNotify={notify} onChanged={() => { refreshAgents(); }} />}
         {view === 'config' && <Config config={config} onNotify={notify} onChanged={refreshConfig} />}
       </main>
 
