@@ -49,9 +49,13 @@ async function buildPrompt(context, job) {
 async function recentGuidance(context, specId) {
   try {
     const { getDb } = await import('../core/store.js');
-    const rows = getDb().prepare('SELECT role, content FROM messages WHERE spec_id=? AND content IS NOT NULL AND length(content)>0 ORDER BY id DESC LIMIT 6').all(specId);
+    // Pull recent HUMAN + system feedback so the agent actually adapts to what
+    // the user said (not just the last few messages, and not tool/system noise).
+    const rows = getDb().prepare(
+      "SELECT role, content FROM messages WHERE spec_id=? AND content IS NOT NULL AND length(content)>0 AND role IN ('user','system') ORDER BY id DESC LIMIT 20"
+    ).all(specId);
     if (!rows.length) return null;
-    return rows.reverse().map(r => `- [${r.role}] ${r.content.slice(0, 500)}`).join('\n');
+    return rows.reverse().map(r => `- [${r.role}] ${r.content.slice(0, 1200)}`).join('\n');
   } catch { return null; }
 }
 
@@ -92,6 +96,7 @@ export const HARNESSES = {
     craft(prompt, job) {
       const args = ['chat', '-q', prompt];
       if (job.model) args.push('-m', job.model);
+      if (job.provider) args.push('--provider', job.provider);
       return args;
     },
   },
@@ -166,47 +171,6 @@ export const HARNESSES = {
       return ['-p', prompt];
     },
   },
-
-  // Custom: job.step.command (or config.custom_command) templated with placeholders.
-  custom: {
-    label: 'Custom',
-    description: 'Arbitrary shell command / script.',
-    async run(job, context) {
-      const cmd = job.step?.command || job.harness_config?.command || context.config?.custom_command;
-      if (!cmd) throw new Error('Custom harness requires a `command` on the step (or custom_command in config)');
-      const fs = await import('node:fs');
-      const promptPath = `${context.checkout}/.specflow_prompt.md`;
-      fs.writeFileSync(promptPath, await buildPrompt(context, job));
-      const rendered = cmd
-        .replaceAll('{checkout}', context.checkout)
-        .replaceAll('{prompt_file}', promptPath)
-        .replaceAll('{branch}', job.branch || '')
-        .replaceAll('{job_id}', job.id);
-      return runProc('/bin/bash', ['-c', rendered], { cwd: context.checkout, jobId: job.id });
-    },
-  },
-
-  // Direct LLM call — useful for planning, review, and lightweight verify steps.
-  llm: {
-    label: 'Direct LLM',
-    description: 'Direct completion (no code agent) — good for plan/review.',
-    async run(job, context) {
-      const { chatComplete } = await import('../llm/providers.js');
-      const prompt = await buildPrompt(context, job);
-      const provider = job.provider || context.config?.provider || 'openrouter';
-      const out = await chatComplete({
-        provider, model: job.model || context.config?.model,
-        messages: [{ role: 'system', content: 'You are an autonomous engineering assistant.' }, { role: 'user', content: prompt }],
-        config: context.config,
-      });
-      emit(EVT.JOB_LOG, { jobId: job.id, level: 'info', message: out.slice(0, 1200) });
-      if (job.lifecycle === 'verify') {
-        const fail = /FAIL(?:\s|:|\()/i.test(out) && !/PASS/i.test(out);
-        if (fail) throw new Error('Verification failed (LLM reported failure): ' + out.slice(0, 300));
-      }
-      return { code: 0, output: out, messages: out.trim() };
-    },
-  },
 };
 
 // Build the generic CLI runner for coprocessor harnesses (claude, codex, …).
@@ -223,8 +187,17 @@ for (const [id, def] of Object.entries(HARNESSES)) {
 }
 
 export async function runHarness(job, context) {
-  const harnessId = (job.harness || 'custom').toLowerCase();
-  const impl = HARNESSES[harnessId] || HARNESSES.custom;
+  const harnessId = (job.harness || '').toLowerCase();
+  const impl = HARNESSES[harnessId];
+  if (!impl) {
+    // Hard gate: SpecFlow dispatches ONLY to coding-agent CLI harnesses
+    // (claude, hermes, codex, …). Text-only `llm` and bare shell `custom`
+    // are intentionally not available.
+    throw new Error(
+      `Harness "${job.harness || '(none)'}" is not a supported CLI agent. ` +
+      `SpecFlow only runs coding-agent harnesses: ${Object.keys(HARNESSES).join(', ')}.`
+    );
+  }
   return impl.run(job, context);
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import PromptEditor from './PromptEditor.jsx';
 
-const STEP_HARNESSES_FALLBACK = ['custom', 'hermes', 'claude', 'llm', 'opencode', 'codex', 'gemini', 'aider', 'qwen-code', 'github-copilot'];
+const STEP_HARNESSES_FALLBACK = ['hermes', 'claude', 'opencode', 'codex', 'gemini', 'aider', 'qwen-code', 'github-copilot'];
 
 // Harness options for dropdowns. Uses the backend's harness catalog (id+label)
 // when available, else a sensible static fallback.
@@ -23,7 +23,7 @@ export function defaultSteps() {
       id: 'plan',
       name: 'Plan',
       method: '',
-      harness: 'llm',
+      harness: 'hermes',
       provider: 'gemini',
       model: 'gemini-3.5-flash-lite',
       iterations: 1,

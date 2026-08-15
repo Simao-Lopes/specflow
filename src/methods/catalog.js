@@ -50,12 +50,12 @@ export const METHODS = {
   plan: [
     {
       id: 'plan-sketch', name: 'Sketch', complexity: 1,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Quick plan for the feature. Feature: {description}. List 3-6 bullet steps to implement it. No code, keep it short.',
     },
     {
       id: 'plan-spec', name: 'Specify (what/why)', complexity: 2,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'spec-kit/commands/specify.md',
       source: 'github/spec-kit',
       tpl: `You are running the GitHub Spec Kit /specify command for feature: {description}. ` +
@@ -67,7 +67,7 @@ export const METHODS = {
     },
     {
       id: 'plan-technical', name: 'Technical plan (how)', complexity: 3,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'spec-kit/commands/plan.md',
       source: 'github/spec-kit',
       tpl: `You are running the GitHub Spec Kit /plan command for feature: {description}. ` +
@@ -78,7 +78,7 @@ export const METHODS = {
     },
     {
       id: 'plan-adr', name: 'ADR + plan', complexity: 4,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'adr/adr-template.md',
       source: 'adr/madr',
       tpl: `You are producing an Architecture Decision Record (MADR/ADR.org format) for feature: {description}. ` +
@@ -89,7 +89,7 @@ export const METHODS = {
     },
     {
       id: 'plan-cosmos', name: 'Full design doc (cosmos-style)', complexity: 5,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'spec-kit/plan-template.md',
       source: 'github/spec-kit',
       tpl: `You are writing a comprehensive design/implementation plan for feature: {description}. ` +
@@ -138,7 +138,7 @@ export const METHODS = {
     },
     {
       id: 'code-parallel', name: 'Multi-variant exploration', complexity: 5,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: `For feature: {description}, produce 2-3 alternative implementation strategies/approaches with trade-offs (e.g. performance vs simplicity, or two different architectures). Acceptance: {acceptance}. Present options without committing to code.`,
     },
   ],
@@ -146,12 +146,12 @@ export const METHODS = {
   docs: [
     {
       id: 'docs-update', name: 'Update docs', complexity: 1,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Update the project documentation to reflect: {description}. Acceptance: {acceptance}. Keep changes accurate and concise; update README and relevant guides if they are affected.',
     },
     {
       id: 'docs-changelog', name: 'Changelog + release notes', complexity: 2,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'changelog/keep-a-changelog.md',
       source: 'keepachangelog.com',
       tpl: `Write changelog/release-note entries for: {description}. Acceptance: {acceptance}. ` +
@@ -161,17 +161,17 @@ export const METHODS = {
     },
     {
       id: 'docs-api', name: 'API reference (OpenAPI/docstrings)', complexity: 3,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Document the API surface for: {description}. Acceptance: {acceptance}. Produce/update OpenAPI schemas or docstrings for every public endpoint/function, with examples.',
     },
     {
       id: 'docs-migration', name: 'Migration & upgrade guide', complexity: 4,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Write a migration/upgrade guide for: {description}. Acceptance: {acceptance}. Cover breaking changes, required steps, and rollback.',
     },
     {
       id: 'docs-deep', name: 'Deep technical documentation', complexity: 5,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Write deep technical documentation for: {description}. Acceptance: {acceptance}. Include architecture diagrams (text/ASCII), design rationale, data flows, and operational runbooks.',
     },
   ],
@@ -179,7 +179,7 @@ export const METHODS = {
   test: [
     {
       id: 'test-smoke', name: 'Smoke check', complexity: 1,
-      harness: 'custom',
+      harness: 'hermes',
       command: '{checkout}/{smoke}', // placeholder; overridden by user command usually
       file: 'test-pyramid/pyramid.md',
       source: 'martinfowler.com',
@@ -189,7 +189,7 @@ export const METHODS = {
     },
     {
       id: 'test-unit', name: 'Unit tests', complexity: 2,
-      harness: 'custom',
+      harness: 'hermes',
       command: '',
       file: 'test-pyramid/pyramid.md',
       source: 'martinfowler.com',
@@ -200,7 +200,7 @@ export const METHODS = {
     },
     {
       id: 'test-contract', name: 'Contract / API tests', complexity: 3,
-      harness: 'custom',
+      harness: 'hermes',
       command: '',
       file: 'test-pyramid/pyramid.md',
       source: 'martinfowler.com',
@@ -211,7 +211,7 @@ export const METHODS = {
     },
     {
       id: 'test-integration', name: 'Integration tests', complexity: 4,
-      harness: 'custom',
+      harness: 'hermes',
       command: '',
       file: 'test-pyramid/pyramid.md',
       source: 'martinfowler.com',
@@ -222,7 +222,7 @@ export const METHODS = {
     },
     {
       id: 'test-e2e', name: 'End-to-end + property', complexity: 5,
-      harness: 'custom',
+      harness: 'hermes',
       command: '',
       file: 'test-pyramid/pyramid.md',
       source: 'martinfowler.com',
@@ -236,12 +236,12 @@ export const METHODS = {
   review: [
     {
       id: 'review-read', name: 'Read-through', complexity: 1,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Read the changes made for: {description}. Acceptance: {acceptance}. Summarise what changed and flag anything obviously wrong or missing. Keep it light.',
     },
     {
       id: 'review-code', name: 'Code review (best practices)', complexity: 2,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'spec-kit/commands/checklist.md',
       source: 'github/spec-kit',
       tpl: `You are running the GitHub Spec Kit /checklist command to review feature quality for: {description}. ` +
@@ -250,7 +250,7 @@ export const METHODS = {
     },
     {
       id: 'review-security', name: 'Security review (OWASP)', complexity: 3,
-      harness: 'llm',
+      harness: 'hermes',
       file: 'owasp/threat-modeling.md',
       source: 'owasp.org',
       tpl: `Security-review the changes for: {description} using OWASP threat modeling (STRIDE). ` +
@@ -261,12 +261,12 @@ export const METHODS = {
     },
     {
       id: 'review-performance', name: 'Performance review', complexity: 4,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: 'Performance-review the changes for: {description}. Look for O(N²)/hot paths, N+1 queries, unnecessary allocation, blocking I/O, and caching opportunities. Acceptance: {acceptance}. Quantify expected impact where possible.',
     },
     {
       id: 'review-architecture', name: 'Architecture + compliance review', complexity: 5,
-      harness: 'llm',
+      harness: 'hermes',
       tpl: `Architecture and compliance review for: {description}. Assess fit vs the repo's documented architecture/constitution, layering, coupling, extensibility, and any standards. Acceptance: {acceptance}. Produce a structured decision record noting trade-offs.`,
     },
   ],
@@ -343,7 +343,7 @@ export function resolveMethod(step, ctx = {}) {
     if (custom) {
       return {
         source: 'custom', phase, id: custom.id, name: custom.name,
-        harness: 'custom', command: custom.command,
+        harness: 'hermes', command: custom.command,
         prompt: `[Custom action ${custom.name}] ${step?.prompt || ''}`.trim(),
       };
     }
