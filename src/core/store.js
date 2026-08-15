@@ -88,19 +88,6 @@ function migrate() {
       PRIMARY KEY (job_id, step_id)
     );
 
-    CREATE TABLE IF NOT EXISTS agents (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      harness TEXT,
-      model TEXT,
-      provider TEXT,
-      repo TEXT,
-      branch_prefix TEXT DEFAULT 'feature/',
-      auto_pr INTEGER DEFAULT 1,
-      active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
     CREATE TABLE IF NOT EXISTS config (
       key TEXT PRIMARY KEY,
       value TEXT

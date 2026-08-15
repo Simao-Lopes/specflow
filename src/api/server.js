@@ -11,7 +11,6 @@ import { dirname, join } from 'node:path';
 
 import {
   listSpecs, getSpec, createSpec, updateSpec, deleteSpec,
-  listAgents, upsertAgent, deleteAgent,
   listJobs, getJob, jobLogs, jobSteps, runJob, gateJob, jobArtifacts, jobGitHistory,
   listMessages, addMessage, stepsOf,
   listPipelines, getPipeline, createPipeline, updatePipeline, deletePipeline,
@@ -77,10 +76,6 @@ export function buildServer({ dbPath, port }) {
     api.post('/api/specs', async (req) => createSpec(req.body));
     api.patch('/api/specs/:id', async (req) => updateSpec(req.params.id, req.body));
     api.delete('/api/specs/:id', async (req) => { deleteSpec(req.params.id); return { ok: true }; });
-
-    api.get('/api/agents', async () => listAgents());
-    api.put('/api/agents', async (req) => upsertAgent(req.body));
-    api.delete('/api/agents/:id', async (req) => { deleteAgent(req.params.id); return { ok: true }; });
 
     // Methods library — industry templates (simplest→complex) + custom actions
     // defined in <repoRoot>/.specflow/actions/<phase>/.

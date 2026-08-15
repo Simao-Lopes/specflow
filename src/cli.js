@@ -27,7 +27,6 @@ SpecFlow CLI
   try {
     switch (cmd) {
       case 'spec': return await specCmd(sub, rest, api);
-      case 'agent': return await agentCmd(sub, rest, api);
       case 'job': return await jobCmd(sub, rest, api);
       case 'channels': {
         const r = await fetch(api('/api/channels')); console.log(JSON.stringify(await r.json(), null, 2)); return;
@@ -70,23 +69,6 @@ async function specCmd(sub, rest, api) {
   }
   if (sub === 'status') { await specCmd('list', rest, api); return; }
   throw new Error('Unknown spec subcommand');
-}
-
-async function agentCmd(sub, rest, api) {
-  if (sub === 'list') {
-    const r = await fetch(api('/api/agents'));
-    console.log(JSON.stringify(await r.json(), null, 2));
-    return;
-  }
-  if (sub === 'create') {
-    const p = parseArgs(rest);
-    const body = { name: p.name, harness: p.harness || 'custom', model: p.model || null, provider: p.provider || null, repo: p.repo || null, auto_pr: p.auto_pr === 'false' ? 0 : 1, active: 1 };
-    if (!body.name) throw new Error('--name is required');
-    const r = await fetch(api('/api/agents'), { method: 'PUT', headers: hdr(), body: JSON.stringify(body) });
-    console.log('Agent saved:', JSON.stringify(await r.json(), null, 2));
-    return;
-  }
-  throw new Error('Unknown agent subcommand');
 }
 
 async function jobCmd(sub, rest, api) {
