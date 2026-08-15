@@ -225,6 +225,7 @@ export default function App() {
             initialDraft={newSpecDraftRef.current || undefined}
             onDraftChange={(d) => { newSpecDraftRef.current = d; }}
             onOpenPipelinesForNew={openNewSpecPipeline}
+            globalRepo={config?.default_repo}
           />
         )}
         {view === 'detail' && selectedSpecId && (
@@ -239,6 +240,7 @@ export default function App() {
             specEvent={specEvents.filter((e) => e && (e.deleted || String(e.id) === String(selectedSpecId)))}
             pipelines={pipelines}
             onOpenPipelinesForNew={openDetailPipeline}
+            globalRepo={config?.default_repo}
           />
         )}
         {view === 'detail' && !selectedSpecId && goBoard()}

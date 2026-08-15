@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import api from '../api.js';
 import { TYPES } from './SpecBoard.jsx';
+import RepoPicker from './RepoPicker.jsx';
 
 const EMPTY = { title: '', description: '', type: 'feature', repo: '', acceptance_criteria: '', pipeline_id: 'default' };
 
-export default function NewSpec({ onNotify, onSaved, pipelines, initialDraft, onDraftChange, onOpenPipelinesForNew }) {
+export default function NewSpec({ onNotify, onSaved, pipelines, initialDraft, onDraftChange, onOpenPipelinesForNew, globalRepo }) {
   const [form, setForm] = useState(() => { const d = initialDraft && Object.keys(initialDraft).length ? initialDraft : EMPTY; return { ...EMPTY, ...d }; });
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,10 +66,13 @@ export default function NewSpec({ onNotify, onSaved, pipelines, initialDraft, on
               {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </label>
-          <label className="field">
-            <span>Repo</span>
-            <input className="input mono" value={form.repo} onChange={set('repo')} placeholder="owner/repo or URL" />
-          </label>
+          <RepoPicker
+            value={form.repo}
+            onChange={(v) => setForm((f) => { const nf = { ...f, repo: v }; if (onDraftChange) onDraftChange(nf); return nf; })}
+            globalRepo={globalRepo}
+            label="Repo"
+            hint="Leave as Global repo to write into the shared specs repo"
+          />
         </div>
 
         <label className="field">

@@ -5,6 +5,7 @@ import { flowHint } from './StepsBuilder.jsx';
 import AgentConsole from './AgentConsole.jsx';
 import AgentChat from './AgentChat.jsx';
 import PipelineVisual from './PipelineVisual.jsx';
+import RepoPicker from './RepoPicker.jsx';
 
 // Clearly-collapsible section: tappable header with chevron + hint, so it's
 // obvious the panel expands/collapses.
@@ -53,7 +54,7 @@ function PRBanner({ job }) {
 export default function SpecDetail({
   specId, onNotify, onBack,
   jobEvent, onRefreshJob, stepEvent, messageEvent, specEvent,
-  pipelines, onOpenPipelinesForNew,
+  pipelines, onOpenPipelinesForNew, globalRepo,
 }) {
   const [spec, setSpec] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -210,6 +211,15 @@ export default function SpecDetail({
     } catch (err) { onNotify(err.message, 'error'); }
   };
 
+  const changeRepo = async (val) => {
+    if (!spec || (spec.repo || '') === (val || '')) return;
+    try {
+      await api.updateSpec(specId, { repo: val || null });
+      onNotify(val ? `Repo set: ${val}` : 'Repo set to Global specs repo', 'success');
+      loadAll();
+    } catch (err) { onNotify(err.message, 'error'); }
+  };
+
   const doDelete = async () => {
     if (!window.confirm(`Delete spec "${spec.title}" and its jobs?`)) return;
     try {
@@ -249,7 +259,9 @@ export default function SpecDetail({
           <div className="spec-meta">
             <span className={`badge type-${spec.type || 'feature'}`}>{spec.type || 'feature'}</span>
             <span className={`badge ${statusClass(spec.status)}`}>{spec.status}</span>
-            {spec.repo && <span className="mono chip">{spec.repo}</span>}
+            <span className="mono chip repo-chip" title={spec.repo || 'Global specs repo'}>
+              {spec.repo || '🌐 global specs repo'}
+            </span>
             {spec.branch && <span className="mono chip">@{spec.branch}</span>}
           </div>
         </div>
@@ -287,6 +299,15 @@ export default function SpecDetail({
               <option value="default">default</option>
               <option value="__new__">＋ New pipeline…</option>
             </select>
+          </label>
+          <label className="field repo-select">
+            <span>Repo</span>
+            <RepoPicker
+              value={spec.repo || ''}
+              onChange={async (v) => { await changeRepo(v); }}
+              globalRepo={globalRepo}
+              hint="Global = write into the shared specs repo; pick a connection to isolate this project"
+            />
           </label>
         </div>
         <div className="flow-hint mono" title="Pipeline flow">

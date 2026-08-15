@@ -405,18 +405,18 @@ export default function Config({ config, onNotify, onChanged }) {
             <SettingsModelSelect provider={settings.llm_provider} model={settings.llm_model} onChange={(m) => setSetting('llm_model', m)} models={models} />
           </Field>
 
-          <h4 className="settings-group-title">Repo</h4>
-          <Field label="Default repo (connections)">
+          <h4 className="settings-group-title">Global Specs Repo</h4>
+          <Field label="Specs repo" hint="where specs/projects with no repo of their own write their git work">
             <select
               className="input mono"
               value={connOptions.some((c) => c.url === settings.default_repo) ? settings.default_repo : ''}
               onChange={(e) => setRepo(e.target.value)}
             >
-              <option value="">(none)</option>
+              <option value="">(none — projects write to a per-project repo only)</option>
               {connOptions.map((c) => <option key={c.id} value={c.url}>{c.name || c.url}</option>)}
             </select>
           </Field>
-          <Field label="Or repo URL" hint="owner/repo or full https/git url">
+          <Field label="Or repo URL" hint="owner/repo or full https/git url (free-text override)">
             <input className="input mono" value={settings.default_repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repo or https://…" />
           </Field>
           <Field label="Repo root">
