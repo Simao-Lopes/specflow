@@ -354,7 +354,7 @@ export default function SpecDetail({
         ) : (
           <table className="jobs-table">
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Step</th><th>PR</th><th>Created</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Step</th><th>Repo</th><th>PR</th><th>Created</th></tr>
             </thead>
             <tbody>
               {jobs.map((j) => (
@@ -362,9 +362,14 @@ export default function SpecDetail({
                   <td className="mono">{String(j.id).slice(0, 8)}</td>
                   <td>
                     <span className={`badge ${statusClass(j.status)}`}>{j.status}</span>
-                    {j.gate_state === 'waiting' && <span className="badge status-gated">⏸ gated</span>}
+                    {(j.gate_state === 'waiting' || j.gate_state === 'failed') && j.status === 'gated' && <span className={`badge ${j.gate_state === 'failed' ? 'status-failed' : 'status-gated'}`}>{j.gate_state === 'failed' ? '✕ failed' : '⏸ gated'}</span>}
                   </td>
                   <td>{typeof j.step_index === 'number' ? `step ${j.step_index + 1}` : '—'}{j.gate_step ? <span className="muted small mono"> · {j.gate_step}</span> : null}</td>
+                  <td className="repo-cell" title={j.repo || 'scratch (no repo)'}>
+                    {j.repo
+                      ? <span className="mono small">{j.repo.replace(/^https:\/\//, '').replace(/\.git$/, '')}</span>
+                      : <span className="muted small">scratch</span>}
+                  </td>
                   <td>{j.pr_url ? <a href={j.pr_url} target="_blank" rel="noreferrer">PR ↗</a> : <span className="muted">—</span>}</td>
                   <td className="muted small">{fmtTs(j.created_at)}</td>
                 </tr>
