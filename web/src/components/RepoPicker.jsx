@@ -11,38 +11,43 @@ function displayUrl(c) {
 
 export default function RepoPicker({ value, onChange, globalRepo, label, hint }) {
   const [conns, setConns] = useState([]);
-  const [custom, setCustom] = useState(() => value && !['', global].includes(value) ? value : '');
+  const [customMode, setCustomMode] = useState(() => !!value && !['', globalRepo].includes(value));
 
   useEffect(() => {
     api.listConnections().then((l) => setConns(Array.isArray(l) ? l : [])).catch(() => {});
   }, []);
 
   const inConns = conns.some((c) => c.url === value);
-  const isGlobal = global && (!value || String(value) === String(global));
+  const isGlobal = globalRepo && (!value || String(value) === String(globalRepo));
+  const showCustomInput = customMode || (!!value && !inConns && !isGlobal);
+
+  const selectValue = isGlobal ? '__global__'
+    : (inConns ? value
+      : (showCustomInput ? '__custom__' : ''));
 
   return (
     <div className="repo-picker">
       {label && <span className="field-label">{label}</span>}
       <select
         className="input mono"
-        value={isGlobal ? '__global__' : (inConns ? value : (value ? '__custom__' : ''))}
+        value={selectValue}
         onChange={(e) => {
           const v = e.target.value;
-          if (v === '__global__') onChange(global || '');
-          else if (v === '__custom__') { setCustom(value || ''); onChange(''); }
-          else onChange(v);
+          if (v === '__global__') { setCustomMode(false); onChange(globalRepo || ''); }
+          else if (v === '__custom__') { setCustomMode(true); }
+          else { setCustomMode(false); onChange(v); }
         }}
       >
-        <option value="__global__">{global ? `Global repo (${displayUrl({ url: global })})` : 'Global repo (not set)'}</option>
+        <option value="__global__">{globalRepo ? `Global repo (${displayUrl({ url: globalRepo })})` : 'Global repo (not set)'}</option>
         {conns.length > 0 && <optgroup label="Connected repos">
           {conns.map((c) => <option key={c.id} value={c.url}>{c.name || displayUrl(c)}</option>)}
         </optgroup>}
         <option value="__custom__">Custom repo…</option>
       </select>
-      {(value && !inConns && !isGlobal) && (
+      {showCustomInput && (
         <input
           className="input mono"
-          value={custom || value}
+          value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           placeholder="owner/repo or https://…"
         />
