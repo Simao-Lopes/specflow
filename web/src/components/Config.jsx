@@ -10,8 +10,6 @@ const DEFAULT_SETTINGS = {
   default_model: '',
   default_repo: '',
   base_branch: 'main',
-  llm_provider: 'gemini',
-  llm_model: '',
   primary_channel: '',
   custom_command: '',
   repo_root: '',
@@ -393,16 +391,6 @@ export default function Config({ config, onNotify, onChanged }) {
           </Field>
           <Field label="Base branch" hint="branch new specs run against">
             <input className="input mono" value={settings.base_branch} onChange={(e) => setSetting('base_branch', e.target.value)} placeholder="main" />
-          </Field>
-
-          <h4 className="settings-group-title">LLM</h4>
-          <Field label="LLM provider">
-            <select className="input" value={settings.llm_provider} onChange={(e) => setSetting('llm_provider', e.target.value)}>
-              {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </Field>
-          <Field label="LLM model">
-            <SettingsModelSelect provider={settings.llm_provider} model={settings.llm_model} onChange={(m) => setSetting('llm_model', m)} models={models} />
           </Field>
 
           <h4 className="settings-group-title">Global Specs Repo</h4>

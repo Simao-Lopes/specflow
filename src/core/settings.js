@@ -14,9 +14,7 @@ export const SETTINGS_KEYS = [
   'default_harness',   // hermes | claude | custom | llm
   'default_provider',  // gemini | openrouter | nvidia | ollama | litellm
   'default_model',
-  'default_repo',      // a connected repo URL used when a spec has none
-  'llm_provider',
-  'llm_model',
+  'default_repo',      // global specs repo; used when a project has none
   'base_branch',
   'primary_channel',
   'custom_command',
@@ -27,8 +25,6 @@ const SETTINGS_DEFAULTS = {
   default_harness : 'llm',
   default_provider: 'gemini',
   default_model   : 'gemini-3.5-flash-lite',
-  llm_provider    : 'gemini',
-  llm_model       : 'gemini-3.5-flash-lite',
   base_branch     : 'main',
   primary_channel : 'rest',
 };
